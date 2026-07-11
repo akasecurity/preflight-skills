@@ -1,0 +1,12 @@
+{
+  "name": "flightcrew",
+  "displayName": "Flightcrew Skills",
+  "description": "An independent multi-model review crew for coding agents: two blind cross-family reads plus an independent judge — report-only.",
+  "version": "0.2.0",
+  "author": { "name": "AKA Security" },
+  "homepage": "https://akasecurity.io",
+  "repository": "https://github.com/akasecurity/flightcrew-skills",
+  "license": "MIT",
+  "keywords": ["code-review", "design-review", "multi-model", "cross-family", "skills"],
+  "skills": "./skills/"
+}

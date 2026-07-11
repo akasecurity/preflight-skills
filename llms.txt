@@ -1,0 +1,23 @@
+# flightcrew-skills
+
+> A second opinion before you merge — an independent multi-model review crew for coding agents. Two blind parallel reads of a diff, design doc, or writing draft by different model families, then an independent judge that filters false positives. Report-only: it never merges, fixes, or acts on a verdict. MIT. Needs Node; drives the `claude`, `codex`, and `agy` CLIs.
+
+flightcrew-skills adds a cross-family review pass a single coding agent can't give itself: two model seats from different families read an identical ground-truth packet (a git diff or a file) in parallel and blind to each other — one RECALL-tuned (report everything suspicious), one PRECISION-tuned (only cite-grounded findings) — then a third independent seat judges both reads, discarding false positives and flagging anything both missed. It is a judge, not a vote counter. The verdict is printed to stdout; nothing is ever written into the reviewed repo. Freshness is pinned by an anchor (the git SHA of a range's endpoint, or the sha256 of a file's bytes) printed at the top and bottom of every report.
+
+## For coding agents
+
+- [scripts/crew.mjs](https://github.com/akasecurity/flightcrew-skills/blob/main/scripts/crew.mjs): The single zero-dependency engine (importable and executable). Subcommands: `review <git-range>`, `consult <file>`, `biascheck <file>`. Only `node:*` imports.
+- [skills/crew-review/SKILL.md](https://github.com/akasecurity/flightcrew-skills/blob/main/skills/crew-review/SKILL.md): Review a git range with the two-reads-plus-judge pipeline.
+- [skills/crew-consult/SKILL.md](https://github.com/akasecurity/flightcrew-skills/blob/main/skills/crew-consult/SKILL.md): Review a design doc or file with the same pipeline.
+- [skills/biascheck/SKILL.md](https://github.com/akasecurity/flightcrew-skills/blob/main/skills/biascheck/SKILL.md): Neutral median authenticity scorer for a writing draft (N reads, median reported).
+- [skills/unbias/SKILL.md](https://github.com/akasecurity/flightcrew-skills/blob/main/skills/unbias/SKILL.md): Prompt-only de-slop pass the session model applies in place.
+
+## Documentation
+
+- [README.md](https://github.com/akasecurity/flightcrew-skills/blob/main/README.md): What it is, quick start, how the pipeline and the judge work, the anchor/freshness model, and loud-degradation behavior.
+- [shared/TELLS.md](https://github.com/akasecurity/flightcrew-skills/blob/main/shared/TELLS.md): The detection-oriented reference `biascheck` scores a draft against.
+- [shared/BIAS.md](https://github.com/akasecurity/flightcrew-skills/blob/main/shared/BIAS.md): The self-editing tells catalog `unbias` applies in place.
+
+## The skills
+
+Four skills ship, installed as the `flightcrew` plugin. `crew-review` and `crew-consult` run the blind cross-family pipeline (two reads + independent judge, report-only) over a git range and a file respectively. `biascheck` is a separate neutral median scorer: several independent reads of one model score a draft 0–100 for authenticity and the median is reported with the spread. `unbias` is prompt-only — the session model applies the catalog in place, outside the crew engine. Every degradation (same-family fallback, skipped seat, score spread) prints on the report's face.

@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 320" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1B2530"/>
+      <stop offset="1" stop-color="#232F3E"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="320" rx="20" fill="url(#bg)"/>
+  <rect width="1200" height="6" rx="3" fill="#00E0B8"/>
+  <!-- AKA logo mark (shared family signet) -->
+  <g transform="translate(72,92) scale(0.72)" fill="#00E0B8">
+    <circle cx="61.07" cy="20.37" r="20.37"/>
+    <path d="M0 88.666 A40.746 40.746 0 0 1 81.492 88.666 Z"/>
+    <path d="M81.492 88.666 A40.746 40.746 0 0 1 0 88.666 Z" fill-opacity="0.55"/>
+    <circle cx="20.42" cy="157.05" r="20.37" fill-opacity="0.55"/>
+  </g>
+  <!-- Wordmark + subtitle -->
+  <text x="190" y="140" font-family="ui-monospace, 'Geist Mono', monospace" font-size="50" font-weight="700" fill="#F6F8F9">flightcrew</text>
+  <text x="192" y="186" font-size="25" font-weight="400" fill="#B0C7E2">A second opinion before you merge.</text>
+  <!-- Meta lines (what the pills used to say, quieter) -->
+  <g font-family="ui-monospace, 'Geist Mono', monospace" fill="#6B7D8F">
+    <text x="192" y="236" font-size="16"><tspan fill="#7DF8E2">report-only</tspan>  ·  <tspan fill="#A0E7FF">cross-family</tspan>  ·  <tspan fill="#C3CBFF">independent judge</tspan></text>
+    <text x="192" y="268" font-size="15">MIT  ·  needs node  ·  claude / codex / agy</text>
+  </g>
+
+  <!-- Signature motif: two blind reads -> independent judge -> verdict -->
+  <g font-family="ui-monospace, 'Geist Mono', monospace" font-size="14" fill="#6B7D8F">
+    <g stroke-width="2.5" fill="none" opacity="0.5">
+      <path d="M872 116 L983 165" stroke="#00E0B8"/>
+      <path d="M872 224 L983 175" stroke="#00E0B8"/>
+      <path d="M998 170 L1092 170" stroke="#8A98FF"/>
+    </g>
+    <circle cx="860" cy="116" r="11" fill="none" stroke="#00E0B8" stroke-width="2.5"/><circle cx="860" cy="116" r="4.5" fill="#00E0B8"/>
+    <circle cx="860" cy="224" r="11" fill="none" stroke="#00E0B8" stroke-width="2.5"/><circle cx="860" cy="224" r="4.5" fill="#00E0B8"/>
+    <text x="860" y="90" text-anchor="middle">recall</text>
+    <text x="860" y="258" text-anchor="middle">precision</text>
+    <circle cx="985" cy="170" r="13" fill="none" stroke="#8A98FF" stroke-width="2.5"/><circle cx="985" cy="170" r="5.5" fill="#8A98FF"/>
+    <text x="985" y="144" text-anchor="middle" fill="#8A98FF">judge</text>
+    <path d="M1110 152 L1128 170 L1110 188 L1092 170 Z" fill="#00E0B8"/>
+    <text x="1110" y="214" text-anchor="middle">verdict</text>
+  </g>
+</svg>

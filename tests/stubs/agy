@@ -1,0 +1,12 @@
+#!/usr/bin/env node
+let s = "";
+process.stdin.on("data", (d) => (s += d));
+process.stdin.on("end", () => {
+  if (s.includes("=== TEXT TO SCORE ===")) {
+    console.log(JSON.stringify({ score: 50, reasoning: "e2e agy neutral read", findings: [{ ref: "\"robust\"", tell: "vocabulary tell", fix: "use a plain adjective" }] }));
+  } else if (s.includes("=== REVIEWER READS")) {
+    console.log(JSON.stringify({ verdict: "approve", convergence: "converged", rationale: "e2e agy judge", discarded: [], systemic: [] }));
+  } else {
+    console.log(JSON.stringify({ verdict: "concerns", findings: [{ severity: "low", ref: "a.txt:1", issue: "e2e agy finding" }] }));
+  }
+});

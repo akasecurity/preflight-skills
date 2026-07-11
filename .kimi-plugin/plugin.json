@@ -1,0 +1,21 @@
+{
+  "name": "flightcrew",
+  "version": "0.2.0",
+  "description": "An independent multi-model review crew for coding agents: two blind cross-family reads plus an independent judge — report-only.",
+  "author": { "name": "AKA Security" },
+  "homepage": "https://akasecurity.io",
+  "license": "MIT",
+  "keywords": ["code-review", "design-review", "multi-model", "cross-family", "skills"],
+  "skills": "./skills/",
+  "skillInstructions": "Kimi Code tool mapping for flightcrew-skills:\n\n- When crew-review, crew-consult, or biascheck says to run the crew script, use Kimi Code's `Bash` tool to run the exact `node <resolved-path>/crew.mjs ...` command the skill shows.\n- When a skill refers to the `Skill` tool, use Kimi Code's native `Skill` tool.\n- The crew skills (crew-review, crew-consult, biascheck) each run one command and report its output verbatim — they never merge, fix, or act. The unbias skill is prompt-only: it runs no command, applies the tells catalog to the draft in the current session, and edits in place only when asked.",
+  "interface": {
+    "displayName": "Flightcrew Skills",
+    "shortDescription": "An independent multi-model review crew for coding agents — report-only",
+    "longDescription": "Four skills. crew-review (git diffs), crew-consult (design docs), and biascheck (a writing draft) each run two blind parallel reads by different model families (Claude, Codex, Gemini/Antigravity) plus an independent judge that filters false positives, report-only: never merges, fixes, or acts. unbias is a prompt-only pass that applies the same tells catalog to a draft in the current session and edits it only on request.",
+    "developerName": "AKA Security",
+    "capabilities": [
+      "Read"
+    ],
+    "websiteURL": "https://github.com/akasecurity/flightcrew-skills"
+  }
+}
