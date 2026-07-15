@@ -25,15 +25,15 @@ From [akasecurity](https://akasecurity.io) · MIT · needs `node` · drives `cla
 Claude Code:
 
 ```
-/plugin marketplace add akasecurity/flightcrew-skills
-/plugin install flightcrew@flightcrew
+/plugin marketplace add akasecurity/marketplace
+/plugin install flightcrew@akasecurity
 ```
 
 Codex:
 
 ```
-codex plugin marketplace add akasecurity/flightcrew-skills
-codex plugin add flightcrew@flightcrew
+codex plugin marketplace add akasecurity/marketplace
+codex plugin add flightcrew@akasecurity
 ```
 
 Antigravity (`agy`) — direct repo install (no marketplace step):

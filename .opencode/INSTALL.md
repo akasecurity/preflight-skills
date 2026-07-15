@@ -42,7 +42,7 @@ To pin a specific version:
 
 ```json
 {
-  "plugin": ["flightcrew-skills@git+https://github.com/akasecurity/flightcrew-skills.git#v0.2.0"]
+  "plugin": ["flightcrew-skills@git+https://github.com/akasecurity/flightcrew-skills.git#v0.2.1"]
 }
 ```
 
