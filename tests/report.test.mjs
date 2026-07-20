@@ -58,7 +58,7 @@ test("telemetry appends one JSONL row per call and never throws", () => {
   const rows = [{ at: "t", repo: "/r", cmd: "review", role: "recall", family: "claude", model: "opus", ms: 5, outcome: "ok", readOnly: "x" }];
   appendTelemetry(rows, home);
   appendTelemetry(rows, home);
-  const lines = readFileSync(join(home, ".flightcrew", "modelcalls.jsonl"), "utf8").trim().split("\n");
+  const lines = readFileSync(join(home, ".preflight", "modelcalls.jsonl"), "utf8").trim().split("\n");
   assert.equal(lines.length, 2);
   assert.equal(JSON.parse(lines[0]).family, "claude");
   // root bypasses POSIX permission checks — the degrade path can only be exercised unprivileged

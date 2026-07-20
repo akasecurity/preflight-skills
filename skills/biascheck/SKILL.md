@@ -37,4 +37,4 @@ authenticity score. `--reads` raises the read count for a steadier number on bor
 - The score is a signal, not a verdict; a single read is noisy, which is why the median and the spread
   are both shown. A plain, terse, or non-native-English voice is not itself a tell.
 - On exit 1/2, relay the stderr message verbatim and surface any report that printed on stdout.
-- The run appends telemetry to `~/.flightcrew/modelcalls.jsonl` and writes nothing into the reviewed repo.
+- The run appends telemetry to `~/.preflight/modelcalls.jsonl` and writes nothing into the reviewed repo.

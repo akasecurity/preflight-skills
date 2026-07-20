@@ -15,7 +15,7 @@
     <circle cx="20.42" cy="157.05" r="20.37" fill-opacity="0.55"/>
   </g>
   <!-- Wordmark + subtitle -->
-  <text x="190" y="140" font-family="ui-monospace, 'Geist Mono', monospace" font-size="50" font-weight="700" fill="#F6F8F9">flightcrew</text>
+  <text x="190" y="140" font-family="ui-monospace, 'Geist Mono', monospace" font-size="50" font-weight="700" fill="#F6F8F9">preflight</text>
   <text x="192" y="186" font-size="25" font-weight="400" fill="#B0C7E2">A second opinion before you merge.</text>
   <!-- Meta lines (what the pills used to say, quieter) -->
   <g font-family="ui-monospace, 'Geist Mono', monospace" fill="#6B7D8F">

@@ -1,12 +1,12 @@
 cff-version: 1.2.0
-message: "If you use flightcrew-skills, please cite it as below."
-title: flightcrew-skills
+message: "If you use preflight-skills, please cite it as below."
+title: preflight-skills
 abstract: "An independent multi-model review crew for coding agents: two blind cross-family reads plus an independent judge that filters false positives. Report-only."
 type: software
 authors:
   - family-names: Lin
     given-names: William
-repository-code: "https://github.com/akasecurity/flightcrew-skills"
+repository-code: "https://github.com/akasecurity/preflight-skills"
 url: "https://akasecurity.io"
 license: MIT
 version: 0.2.0

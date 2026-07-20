@@ -1,10 +1,10 @@
 {
-  "name": "flightcrew",
+  "name": "preflight",
   "description": "An independent multi-model review crew for coding agents: two blind cross-family reads plus an independent judge — report-only.",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "author": { "name": "AKA Security" },
   "homepage": "https://akasecurity.io",
-  "repository": "https://github.com/akasecurity/flightcrew-skills",
+  "repository": "https://github.com/akasecurity/preflight-skills",
   "license": "MIT",
   "keywords": ["code-review", "design-review", "multi-model", "cross-family", "skills"],
   "skills": "./skills/"

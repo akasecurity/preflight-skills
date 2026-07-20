@@ -591,11 +591,11 @@ export function renderBiascheckReport({ anchor, at, model, reads, authenticity, 
 
 export function appendTelemetry(calls, home = homedir()) {
   try {
-    const dir = join(home, ".flightcrew");
+    const dir = join(home, ".preflight");
     mkdirSync(dir, { recursive: true });
     appendFileSync(join(dir, "modelcalls.jsonl"), calls.map((c) => JSON.stringify(c) + "\n").join(""));
   } catch (e) {
-    console.error(`! telemetry: could not append to ${join(home, ".flightcrew", "modelcalls.jsonl")} (${String(e?.message ?? e)}) — run unaffected`);
+    console.error(`! telemetry: could not append to ${join(home, ".preflight", "modelcalls.jsonl")} (${String(e?.message ?? e)}) — run unaffected`);
   }
 }
 

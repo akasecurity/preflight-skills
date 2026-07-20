@@ -39,5 +39,5 @@ installed CLIs and prefers a cross-family crew automatically.
 - On exit 1/2, relay the stderr message verbatim (it names the missing CLI, bad file, or usage
   problem) AND surface any report that printed on stdout — an exit 1 with all reads skipped still
   prints a useful report there.
-- The run appends telemetry to `~/.flightcrew/modelcalls.jsonl` and writes nothing into the
+- The run appends telemetry to `~/.preflight/modelcalls.jsonl` and writes nothing into the
   reviewed repo.

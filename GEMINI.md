@@ -1,4 +1,4 @@
-# flightcrew-skills
+# preflight-skills
 
 Two skills, one script, report-only:
 

@@ -40,7 +40,7 @@ test("e2e review: cross-family stub crew, report on stdout, exit 0, telemetry ro
   assert.match(stdout, /e2e codex finding/);
   assert.match(stdout, /JUDGE: approve \(converged\) — e2e stub judge/);
   assert.match(stdout, /REPORT ONLY/);
-  const rows = readFileSync(join(home, ".flightcrew", "modelcalls.jsonl"), "utf8").trim().split("\n").map((l) => JSON.parse(l));
+  const rows = readFileSync(join(home, ".preflight", "modelcalls.jsonl"), "utf8").trim().split("\n").map((l) => JSON.parse(l));
   assert.equal(rows.length, 3);
 });
 

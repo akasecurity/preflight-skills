@@ -1,4 +1,4 @@
-# Installing flightcrew-skills for OpenCode
+# Installing preflight-skills for OpenCode
 
 ## Prerequisites
 
@@ -6,11 +6,11 @@
 
 ## Installation
 
-Add flightcrew-skills to the `plugin` array in your `opencode.json` (global or project-level):
+Add preflight-skills to the `plugin` array in your `opencode.json` (global or project-level):
 
 ```json
 {
-  "plugin": ["flightcrew-skills@git+https://github.com/akasecurity/flightcrew-skills.git"]
+  "plugin": ["preflight-skills@git+https://github.com/akasecurity/preflight-skills.git"]
 }
 ```
 
@@ -21,7 +21,7 @@ Verify by asking: "Use the skill tool to list skills" and confirm `crew-review` 
 appear.
 
 OpenCode uses its own plugin install. If you also use Claude Code, Codex, or another harness,
-install flightcrew-skills separately for each one.
+install preflight-skills separately for each one.
 
 ## Usage
 
@@ -34,7 +34,7 @@ use skill tool to load crew-consult
 
 ## Updating
 
-OpenCode installs flightcrew-skills through a git-backed package spec. Some OpenCode and Bun
+OpenCode installs preflight-skills through a git-backed package spec. Some OpenCode and Bun
 versions pin that resolved git dependency in a lockfile or cache, so a restart may not pick up the
 newest commit. If updates do not appear, clear OpenCode's package cache or reinstall the plugin.
 
@@ -42,7 +42,7 @@ To pin a specific version:
 
 ```json
 {
-  "plugin": ["flightcrew-skills@git+https://github.com/akasecurity/flightcrew-skills.git#v0.2.1"]
+  "plugin": ["preflight-skills@git+https://github.com/akasecurity/preflight-skills.git#v0.2.2"]
 }
 ```
 
@@ -50,7 +50,7 @@ To pin a specific version:
 
 ### Plugin not loading
 
-1. Check logs: `opencode run --print-logs "hello" 2>&1 | grep -i flightcrew`
+1. Check logs: `opencode run --print-logs "hello" 2>&1 | grep -i preflight`
 2. Verify the plugin line in your `opencode.json`
 3. Make sure you're running a recent version of OpenCode
 
@@ -67,4 +67,4 @@ neither skill asks questions, dispatches subagents, or tracks todos.
 
 ## Getting Help
 
-- Report issues: https://github.com/akasecurity/flightcrew-skills/issues
+- Report issues: https://github.com/akasecurity/preflight-skills/issues

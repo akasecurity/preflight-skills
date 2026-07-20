@@ -1,6 +1,6 @@
 {
-  "name": "flightcrew-skills",
-  "version": "0.2.1",
+  "name": "preflight-skills",
+  "version": "0.2.2",
   "private": true,
   "type": "module",
   "license": "MIT",

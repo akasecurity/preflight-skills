@@ -1,12 +1,12 @@
 {
-  "name": "flightcrew",
-  "description": "Marketplace for flightcrew-skills",
+  "name": "preflight",
+  "description": "Marketplace for preflight-skills",
   "owner": { "name": "AKA Security" },
   "plugins": [
     {
-      "name": "flightcrew",
+      "name": "preflight",
       "description": "An independent multi-model review crew for coding agents: two blind cross-family reads plus an independent judge — report-only.",
-      "version": "0.2.1",
+      "version": "0.2.2",
       "source": "./",
       "author": { "name": "AKA Security" }
     }

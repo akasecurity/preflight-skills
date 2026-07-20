@@ -1,15 +1,15 @@
-# flightcrew-skills
+# preflight-skills
 
-<p align="center"><img src="media/banner.svg" alt="flightcrew — a second opinion before you merge. An independent multi-model review crew for coding agents. report-only · cross-family · independent judge. MIT · needs node · claude / codex / agy." width="100%"></p>
+<p align="center"><img src="media/banner.svg" alt="preflight — a second opinion before you merge. An independent multi-model review crew for coding agents. report-only · cross-family · independent judge. MIT · needs node · claude / codex / agy." width="100%"></p>
 
-![version](https://img.shields.io/badge/dynamic/json?url=https://raw.githubusercontent.com/akasecurity/flightcrew-skills/main/package.json&query=$.version&label=version&color=blue)
+![version](https://img.shields.io/badge/dynamic/json?url=https://raw.githubusercontent.com/akasecurity/preflight-skills/main/package.json&query=$.version&label=version&color=blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
 
 **A second opinion before you merge — multi-model code review for coding agents.** An independent multi-model review crew for your coding agent:
 two blind parallel reads of a diff, design doc, or writing draft by different model families, then an
 independent judge that filters false positives. Report-only — it never merges, fixes, or acts.
 
-> Installed as the `flightcrew` plugin (skills: `crew-review`, `crew-consult`, `biascheck`, `unbias`). Repo: `akasecurity/flightcrew-skills`.
+> Installed as the `preflight` plugin (skills: `crew-review`, `crew-consult`, `biascheck`, `unbias`). Repo: `akasecurity/preflight-skills`.
 
 Four skills ship: `crew-review` and `crew-consult` review code and design docs; `biascheck` scores a
 writing draft for authenticity with a neutral median scorer (several reads by `gpt-5.6-terra`, median
@@ -26,25 +26,25 @@ Claude Code:
 
 ```
 /plugin marketplace add akasecurity/marketplace
-/plugin install flightcrew@akasecurity
+/plugin install preflight@akasecurity
 ```
 
 Codex:
 
 ```
 codex plugin marketplace add akasecurity/marketplace
-codex plugin add flightcrew@akasecurity
+codex plugin add preflight@akasecurity
 ```
 
 Antigravity (`agy`) — direct repo install (no marketplace step):
 
 ```
-agy plugin install https://github.com/akasecurity/flightcrew-skills
+agy plugin install https://github.com/akasecurity/preflight-skills
 ```
 
 Other harnesses (Cursor, Gemini, Kimi, OpenCode, Pi) install from this repo too — see the
 [marketplace](https://github.com/akasecurity/marketplace). Standalone CLI, no coding agent:
-`brew install akasecurity/tap/flightcrew`.
+`brew install akasecurity/tap/preflight`.
 
 Then, in any repo:
 
@@ -89,13 +89,13 @@ Exit codes: `0` a report was produced with at least one completed read seat · `
 failure (no model CLI found, bad range, empty diff, unreadable file, or all read seats timed out /
 errored — the report still prints in this case) · `2` a usage error (bad flags/arguments).
 
-The reviewed repo is never touched. Writes are limited to `~/.flightcrew/` (telemetry: every model
+The reviewed repo is never touched. Writes are limited to `~/.preflight/` (telemetry: every model
 call appends one line to `modelcalls.jsonl` with timing + outcome, no tokens, for backend-health
 tracking) and, when a google seat runs, a temporary packet file in the OS temp directory (removed on
 success, kept on a timeout or error as a debug artifact).
 
-The telemetry home is `~/.flightcrew/` by default; set `CREW_HOME` to redirect it (telemetry then
-lands in `$CREW_HOME/.flightcrew/modelcalls.jsonl`). Nothing else honors `CREW_HOME`.
+The telemetry home is `~/.preflight/` by default; set `CREW_HOME` to redirect it (telemetry then
+lands in `$CREW_HOME/.preflight/modelcalls.jsonl`). Nothing else honors `CREW_HOME`.
 
 ## CLI
 
@@ -154,7 +154,7 @@ Platform: macOS/Linux (POSIX). Windows is untested — CLI detection and spawn s
 - **ccg-workflow** — a write-capable multi-model build pipeline where the author model synthesizes
   its own audit.
 
-flightcrew-skills is report-only, cross-family by default, and its judge is an independent third
+preflight-skills is report-only, cross-family by default, and its judge is an independent third
 opinion — not a tally of the first two.
 
 ## Works well with
@@ -175,7 +175,7 @@ independent seat as judge, driving the `claude`, `codex`, and `agy` CLIs you alr
 so on the report's face.
 
 **Is my code sent anywhere new?** No. Only to the model CLIs you already use and have authenticated;
-flightcrew adds no new network destination.
+preflight adds no new network destination.
 
 ## License
 

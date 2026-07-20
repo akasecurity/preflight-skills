@@ -1,7 +1,13 @@
 # Changelog
 
-Notable changes to flightcrew-skills. Format loosely follows Keep a Changelog;
+Notable changes to preflight-skills. Format loosely follows Keep a Changelog;
 versions follow semver.
+
+## [0.2.2] — 2026-07-20
+
+### Changed
+- Renamed the project to **preflight-skills** and the plugin id to **preflight** (was
+  `flightcrew`). Reinstall as `preflight@akasecurity`. Telemetry now writes to `~/.preflight/`.
 
 ## [0.2.0] — 2026-07-09
 

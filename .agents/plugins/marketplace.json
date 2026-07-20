@@ -1,11 +1,11 @@
 {
-  "name": "flightcrew",
+  "name": "preflight",
   "interface": {
-    "displayName": "Flightcrew Skills"
+    "displayName": "Preflight Skills"
   },
   "plugins": [
     {
-      "name": "flightcrew",
+      "name": "preflight",
       "source": {
         "source": "url",
         "url": "./"

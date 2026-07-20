@@ -1,6 +1,6 @@
 {
-  "name": "flightcrew",
+  "name": "preflight",
   "description": "An independent multi-model review crew: two blind cross-family reads plus an independent judge — report-only.",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "contextFileName": "GEMINI.md"
 }
