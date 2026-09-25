@@ -3,8 +3,8 @@
 // of a diff or design doc by different model families, then an independent
 // judge that filters false positives. REPORT-ONLY: prints a report, takes no
 // action, writes nothing into the reviewed repo.
-import { pathToFileURL } from "node:url";
-import { accessSync, statSync, constants as fsConstants, mkdtempSync, writeFileSync, readFileSync, appendFileSync, mkdirSync, rmSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { accessSync, statSync, constants as fsConstants, mkdtempSync, writeFileSync, readFileSync, appendFileSync, mkdirSync, rmSync, realpathSync } from "node:fs";
 import { join, resolve, delimiter } from "node:path";
 import { spawn, execFileSync } from "node:child_process";
 import { tmpdir, homedir } from "node:os";
@@ -634,7 +634,21 @@ export async function main(argv = process.argv.slice(2)) {
   return run.reads.every((r) => r.verdict === "skipped") ? 1 : 0;
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+// A literal `import.meta.url === pathToFileURL(process.argv[1]).href` compare goes false whenever
+// the invocation path runs through a symlink: Node resolves symlinks when it computes the entry
+// module's import.meta.url, but process.argv[1] stays whatever path was actually invoked (a
+// symlinked ~/.claude, macOS's /var -> /private/var, ...). Compare realpaths instead so the CLI
+// still runs when invoked through a symlink.
+function isMainModule() {
+  if (!process.argv[1]) return false;
+  try {
+    return realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url));
+  } catch {
+    return false;
+  }
+}
+
+if (isMainModule()) {
   // Detached seats sit in their own process groups, so a terminal Ctrl-C never reaches them.
   // Forward the signal: reap every live seat's group, then exit with the conventional code.
   for (const [sig, code] of [["SIGINT", 130], ["SIGTERM", 143]]) {
