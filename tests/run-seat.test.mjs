@@ -55,7 +55,7 @@ test("toolNote, when present, sits between brief and contract", async () => {
 test("arg seat: a prompt over the argv bound fails loudly without spawning or truncating", async () => {
   const seat = echoSeat({ packetVia: "arg", argv: ["node", "-e", "console.log('SPAWNED')", "--"] });
   const r = await runSeat(seat, "x".repeat(200), 5000, { argLimit: 100 });
-  assert.equal(r.outcome, "error");
+  assert.equal(r.outcome, "refused");
   assert.equal(r.stdout, "");
   assert.match(r.stderr, /packet too large to pass inline to node \(\d+ bytes > 100-byte argv bound\)/);
 });
@@ -64,7 +64,7 @@ test("arg seat: the bound counts utf8 bytes, not characters", async () => {
   const seat = echoSeat({ packetVia: "arg", brief: "", contract: "", argv: ["node", "-e", "console.log('SPAWNED')", "--"] });
   // 40 em-dashes = 40 chars but 120 bytes; with the 4 separator bytes that is 124 > 100
   const r = await runSeat(seat, "—".repeat(40), 5000, { argLimit: 100 });
-  assert.equal(r.outcome, "error");
+  assert.equal(r.outcome, "refused");
 });
 
 test("inlinePromptLimit: under Linux's 128 KiB per-arg cap and macOS's 1 MiB ARG_MAX", () => {
@@ -161,4 +161,20 @@ test("timeout reaps a grandchild process, not just the direct child", async () =
   } finally {
     if (prev === undefined) delete process.env.REAP_PIDFILE; else process.env.REAP_PIDFILE = prev;
   }
+});
+
+test("a seat with a tool note is not invited to explore the repository; others still are", async () => {
+  const brief = "Reviewer. You may freely explore the repository\nyou are invoked in to build judgment context; the packet below is the shared ground truth.";
+  const echo = ["node", "-e", "console.log(process.argv.at(-1))"];
+  const noted = await runSeat({ packetVia: "arg", toolNote: "NOTE", brief, contract: "C", argv: echo }, "P", 5000);
+  assert.doesNotMatch(noted.stdout, /freely explore/);
+  assert.match(noted.stdout, /Work from the packet below; it is the shared ground truth\.\n\nNOTE/);
+  const plain = await runSeat({ packetVia: "arg", brief, contract: "C", argv: echo }, "P", 5000);
+  assert.match(plain.stdout, /freely explore/);
+});
+
+test("E2BIG from spawn is a refusal with a clear reason, not a raw error", async () => {
+  const r = await runSeat({ packetVia: "arg", brief: "B", contract: "C", argv: ["node", "-e", "0"] }, "x".repeat(4 * 1024 * 1024), 5000, { argLimit: 64 * 1024 * 1024 });
+  assert.equal(r.outcome, "refused");
+  assert.match(r.stderr, /E2BIG/);
 });

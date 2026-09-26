@@ -257,8 +257,11 @@ export function reapAllSeats({ kill = process.kill } = {}) {
 // Byte ceiling for a prompt passed inline as ONE argv element (packetVia "arg"). Linux caps a single
 // argument at MAX_ARG_STRLEN = 128 KiB; macOS has no per-argument cap but ARG_MAX (1 MiB) covers all
 // argv + the environment together; Windows caps the whole command line at 32K chars. The bound leaves
-// headroom for the environment. Over it, the seat fails LOUDLY (outcome error, reason on stderr) —
-// the prompt is never truncated, since a silently clipped diff would yield a confident partial review.
+// headroom for the environment. Over it, the seat is REFUSED before spawning (outcome "refused",
+// reason on stderr), never truncated, since a silently clipped diff would yield a confident partial
+// review. An E2BIG from spawn itself (a huge environment on top of the prompt) is refused the same way.
+// Trade-off: an inline prompt is visible in the process list to other local users for the seat's
+// lifetime, which the old owner-only temp file was not.
 export function inlinePromptLimit(platform = process.platform) {
   if (platform === "linux") return 120 * 1024;
   if (platform === "win32") return 30 * 1024;
@@ -280,13 +283,16 @@ export function runSeat(seat, packetBody, timeoutMs, { cwd = process.cwd(), cloc
     };
     try {
       const argv = [...seat.argv];
-      const prompt = `${seat.brief}${seat.toolNote ? `\n\n${seat.toolNote}` : ""}\n\n${seat.contract}\n\n${packetBody}`;
+      // A seat with a tool note (agy) must not also be invited to explore the repository: agy reaches
+      // for a shell to do that, which is auto-denied and ends its turn.
+      const brief = seat.toolNote ? String(seat.brief).replace(/You may freely explore the repository[\s\S]*?;\s*the packet below is the shared\s+ground truth\./, "Work from the packet below; it is the shared ground truth.") : seat.brief;
+      const prompt = `${brief}${seat.toolNote ? `\n\n${seat.toolNote}` : ""}\n\n${seat.contract}\n\n${packetBody}`;
       let stdinText;
       if (seat.packetVia === "arg") {
         const bytes = Buffer.byteLength(prompt, "utf8");
         if (bytes > argLimit) {
           errText += `packet too large to pass inline to ${argv[0]} (${bytes} bytes > ${argLimit}-byte argv bound) — narrow the range or file, or use a stdin-capable seat`;
-          finish("error");
+          finish("refused");
           return;
         }
         argv.push(prompt);
@@ -311,7 +317,13 @@ export function runSeat(seat, packetBody, timeoutMs, { cwd = process.cwd(), cloc
       if (stdinText !== undefined) child.stdin.write(stdinText);
       child.stdin.end();
     } catch (e) {
-      // Never reject: a sync failure (fs error, malformed argv) is an error OUTCOME.
+      // Never reject: a sync failure (fs error, malformed argv) is an error OUTCOME. spawn throws E2BIG
+      // synchronously when argv + environment exceed the OS limit: that is a refusal, like the bound.
+      if (e?.code === "E2BIG") {
+        errText += `argument list too long for the OS (E2BIG) passing the prompt inline to ${seat.argv?.[0]} — narrow the range or file`;
+        finish("refused");
+        return;
+      }
       errText += String(e?.message ?? e);
       finish("error");
     }
@@ -375,6 +387,7 @@ export async function runCrew(crew, packet, { cwd, timeoutMs, clock = Date.now }
     const seat = crew.reads[i];
     const base = { role: seat.role, family: seat.family, tune: seat.tune, ms: res.ms };
     if (res.outcome === "timeout") return { ...base, verdict: "skipped", findings: [], skipReason: `timeout after ${Math.round(res.ms / 1000)}s` };
+    if (res.outcome === "refused") return { ...base, verdict: "skipped", findings: [], skipReason: `not run: ${firstLine(res.stderr)}` };
     if (res.outcome === "error") return { ...base, verdict: "skipped", findings: [], skipReason: `cli error (exit ${res.code}): ${firstLine(res.stderr)}` };
     const parsed = extractJson(res.stdout, "findings");
     if (!parsed) return { ...base, verdict: "skipped", findings: [], skipReason: withStderr("no parsable JSON verdict in output", res) };
@@ -418,6 +431,7 @@ export async function runBiascheck(seats, packet, { cwd, timeoutMs, clock = Date
   const reads = results.map(({ seat, res }) => {
     const base = { role: seat.role, family: seat.family, tune: seat.tune, ms: res.ms };
     if (res.outcome === "timeout") return { ...base, findings: [], skipReason: `timeout after ${Math.round(res.ms / 1000)}s` };
+    if (res.outcome === "refused") return { ...base, findings: [], skipReason: `not run: ${firstLine(res.stderr)}` };
     if (res.outcome === "error") return { ...base, findings: [], skipReason: `cli error (exit ${res.code}): ${firstLine(res.stderr)}` };
     const parsed = extractJson(res.stdout, "score");
     if (!parsed || typeof parsed.score !== "number") return { ...base, findings: [], skipReason: withStderr("no parsable score in output", res) };
