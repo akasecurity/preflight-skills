@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import {
-  assignJobs, resolveEngines, parseEngineSpec, bindingFor, readOutput, normalizeBrief, failureReason, runSearxng, researcherPrompt, parseArgs, detectEngines, runResearch,
+  assignJobs, resolveEngines, parseEngineSpec, bindingFor, readOutput, isPublicHttpUrl, htmlToText, excerptFor, normalizeBrief, failureReason, runSearxng, researcherPrompt, parseArgs, detectEngines, runResearch,
 } from "../scripts/research.mjs";
 
 const run = promisify(execFile);
@@ -76,19 +76,42 @@ test("failureReason: a parsed brief wins over scary stderr; 402 is named as a cr
   assert.match(failureReason("codex", { outcome: "ok", stdout: "no json here", stderr: "" }), /no parseable brief/);
 });
 
-test("runSearxng: raw snippets become low-confidence findings, deduped by URL, no model involved", async () => {
-  let asked;
-  const fetchImpl = async (url) => { asked = url; return { ok: true, json: async () => ({ results: [
-    { url: "https://x.example/1", title: "One", content: "snippet one" },
-    { url: "https://x.example/1", title: "Dup", content: "dup" },
-    { url: "https://x.example/2", title: "No content" },
-  ] }) }; };
-  const r = await runSearxng({ label: "A", query: "price tracker" }, { baseUrl: "https://searx.example/", fetchImpl });
-  assert.equal(asked, "https://searx.example/search?format=json&q=price%20tracker");
-  assert.equal(r.brief.findings.length, 1);
-  assert.deepEqual([r.brief.findings[0].confidence, r.brief.findings[0].raw], ["low", true]);
-  const down = await runSearxng({ label: "A", query: "q" }, { baseUrl: "https://s", fetchImpl: async () => ({ ok: false, status: 502 }) });
-  assert.equal(down.failure, "searxng HTTP 502");
+test("runSearxng: fetches the top pages itself and returns verbatim excerpts, snippets as fallback, no model involved", async () => {
+  const asked = [];
+  const pageHtml = "<html><head><title>x</title><script>var price=1</script></head><body><p>Intro text that is long enough to count as a chunk of page text here.</p><p>The price tracker sends restock alerts through Apprise to Discord and Telegram channels, and it re-checks each tracked product page on a schedule you set per watch.</p></body></html>";
+  const fetchImpl = async (url) => {
+    asked.push(url);
+    if (url.startsWith("https://searx.example/")) return { ok: true, json: async () => ({ results: [
+      { url: "https://x.example/1", title: "One", content: "snippet one" },
+      { url: "https://x.example/1", title: "Dup", content: "dup" },
+      { url: "https://x.example/down", title: "Down", content: "snippet for a page that fails" },
+      { url: "http://192.168.1.10/admin", title: "LAN", content: "lan snippet" },
+    ] }) };
+    if (url === "https://x.example/1") return { ok: true, url, headers: { get: () => "text/html; charset=utf-8" }, text: async () => pageHtml };
+    return { ok: false, status: 500 };
+  };
+  const r = await runSearxng({ label: "A", query: "price tracker restock alerts" }, { baseUrl: "https://searx.example/", fetchImpl });
+  assert.equal(asked[0], "https://searx.example/search?format=json&q=price%20tracker%20restock%20alerts");
+  assert.ok(!asked.includes("http://192.168.1.10/admin"), "never fetches a private-network address");
+  const [one, down, lan] = r.brief.findings;
+  assert.equal(r.brief.findings.length, 3);
+  assert.equal(one.fetched, true);
+  assert.match(one.quote, /restock alerts through Apprise/);
+  assert.doesNotMatch(one.quote, /var price/);
+  assert.deepEqual([down.quote, down.fetched], ["snippet for a page that fails", undefined]);
+  assert.deepEqual([lan.quote, lan.raw, lan.confidence], ["lan snippet", true, "low"]);
+  const down502 = await runSearxng({ label: "A", query: "q" }, { baseUrl: "https://s", fetchImpl: async () => ({ ok: false, status: 502 }) });
+  assert.equal(down502.failure, "searxng HTTP 502");
+  const forbidden = await runSearxng({ label: "A", query: "q" }, { baseUrl: "https://s", fetchImpl: async () => ({ ok: false, status: 403 }) });
+  assert.match(forbidden.failure, /format=json/);
+});
+
+test("isPublicHttpUrl / htmlToText / excerptFor", () => {
+  for (const u of ["http://localhost:8080", "http://10.0.0.1", "http://172.20.1.1", "http://router.local", "http://[::1]/", "file:///etc/passwd"]) assert.equal(isPublicHttpUrl(u), false, u);
+  assert.equal(isPublicHttpUrl("https://github.com/x"), true);
+  assert.equal(htmlToText("<p>A &amp; B&#39;s</p><style>x{}</style>"), "A & B's");
+  const text = "Unrelated opening line that says nothing useful at all.\nThe restock detector reads JSON-LD availability from the product page.\nFooter text about cookies and privacy settings goes here.";
+  assert.match(excerptFor(text, "restock availability"), /^The restock detector/);
 });
 
 test("researcherPrompt carries the question, angle, lens and the sensitive-topic guard", () => {
@@ -163,7 +186,8 @@ test("engine specs carry a model and effort into the CLI argv", () => {
   assert.ok(codex.includes("model=gpt-6-luna") && codex.includes("model_reasoning_effort=low"));
   const claude = bindingFor("claude", 60, parseEngineSpec("claude:sonnet")).argv;
   assert.equal(claude[claude.indexOf("--model") + 1], "sonnet");
-  assert.ok(claude.includes("--strict-mcp-config"));
+  assert.ok(claude.includes("--strict-mcp-config"), "no MCP servers in a web-reading researcher");
+  assert.ok(!claude.includes("--setting-sources"), "user settings load, so the user's guard hooks still apply");
   assert.equal(bindingFor("claude", 60).argv[bindingFor("claude", 60).argv.indexOf("--model") + 1], "haiku");
 });
 
@@ -178,4 +202,11 @@ test("readOutput: claude JSON yields the answer and its cost; codex stderr yield
   assert.deepEqual([c.text, c.usage.usd], ['{"findings":[]}', 0.012]);
   const x = readOutput({ output: "text" }, { stdout: "answer", stderr: "tokens used\n12,345\n" });
   assert.deepEqual([x.text, x.usage.tokens], ["answer", 12345]);
+});
+
+test("auto resolves to codex gpt-6-luna when codex is installed, else claude haiku", () => {
+  assert.deepEqual(resolveEngines(["auto"], new Set(["claude", "codex"])).engines, ["codex:gpt-6-luna@low"]);
+  assert.deepEqual(resolveEngines(["auto"], new Set(["claude"])).engines, ["claude:haiku"]);
+  assert.deepEqual(parseArgs(["run", "--plan", "p"]).value.engines, ["auto"]);
+  assert.deepEqual(parseArgs(["run", "--plan", "p", "--engines", "CODEX:GPT-X"]).value.engines, ["codex:GPT-X"], "model id case is kept");
 });

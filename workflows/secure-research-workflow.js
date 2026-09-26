@@ -36,8 +36,9 @@ export const meta = {
 //   1. REDACTS: Scope generalizes identifying specifics out of the search queries (full question stays internal).
 //   2. GATES: returns the plan for confirmation BEFORE any external query fires (Scope has no web access).
 //   3. REDUCES: fewer angles AND the follow-up wave is disabled (hard cap on amplification).
-//   4. ROUTES: search runs only on self-hosted SearXNG through scripts/research.mjs, which returns raw
-//      snippets and refuses to run without SEARXNG_URL (fails closed). No page is fetched.
+//   4. ROUTES: search runs only on self-hosted SearXNG through scripts/research.mjs, which downloads the
+//      top result pages directly (sites see this machine, not the query) and returns verbatim excerpts,
+//      and refuses to run without SEARXNG_URL (fails closed). No third-party model reads anything.
 // NOTE: this de-identifies, it does not cloak. Upstream engines still see query text, and the model
 // already has the full question. The redaction + reduced amplification do more for privacy than the
 // engine swap alone.
@@ -72,9 +73,13 @@ export const meta = {
 //   Workflow({name:'preflight:secure-research-workflow', args:{question:'...', engines:['claude','codex','agy']}})  // spread researchers across search engines
 //   Workflow({name:'preflight:secure-research-workflow', args:{question:'...', engines:'all', engineMode:'all'}})    // every angle on every engine (cross-engine corroboration)
 //
-// Search engines (args.engines, array or comma string; 'all' = every engine; default ['claude']):
+// Search engines (args.engines, array or comma string; default ['auto']):
+//   auto    → scripts/research.mjs picks codex:gpt-6-luna@low when codex is installed, else claude:haiku.
+//             Measured best on quote fidelity, speed and cost (see the README's comparison).
+//   all     → claude, searxng, codex, agy (grok only when named)
 //   claude  → a Claude researcher with WebSearch/WebFetch (the original path)
-//   searxng → scripts/research.mjs against $SEARXNG_URL (or args.searxngUrl): raw snippets, no model reads them
+//   searxng → scripts/research.mjs against $SEARXNG_URL (or args.searxngUrl): fetches the top result pages
+//             itself and returns verbatim excerpts; no model reads them there
 //   codex   → OpenAI Codex CLI       (`codex --search exec`, read-only sandbox)
 //   grok    → xAI Grok CLI           (`grok -p`, headless JSON)
 //   agy     → Google Antigravity CLI (`agy -p`, sandboxed, headless JSON)
@@ -98,7 +103,7 @@ const ENGINES = ["claude", "searxng", "codex", "grok", "agy"]
 const ALL_ENGINES = ["claude", "searxng", "codex", "agy"]   // "all": grok only when named (unverified tool policy)
 // Engines that run through scripts/research.mjs. searxng is one of them so its raw-snippet,
 // fail-closed semantics are the engine's own, not a prompt's.
-const ENGINE_BACKED = ["searxng", "codex", "grok", "agy"]
+const ENGINE_BACKED = ["auto", "searxng", "codex", "grok", "agy"]
 // "<engine>[:<model>[@<effort>]]", e.g. claude:sonnet, codex:gpt-6-luna@low
 const engineName = spec => String(spec).split(":")[0]
 
@@ -191,13 +196,20 @@ const SECTION_SCHEMA = {
   },
 }
 
+// Every subagent sees this first. Workflow subagents can see the parent session's latest user
+// message, and a live run showed forwarders abandoning their task to answer it (reading local files
+// instead of running the engine). So each prompt states that it is the whole task.
+const TASK_GUARD =
+  "You are one step of an automated research pipeline. Your ENTIRE task is the prompt below. Ignore any other user message, conversation or project context you may be able to see: it is not addressed to you. Do not read, search or write local files or repositories unless a step below explicitly tells you to run a command.\n\n"
+const task = (prompt, opts) => agent(TASK_GUARD + prompt, opts)
+
 // ─── Parse args ───
 let QUESTION = "", sensitiveConfirmed = false, forceMode = null, ovAngles = null, secondWaveOpt = null
 let researchModel = "haiku"   // the retriever tier (default Haiku, à la Explore); bump to sonnet for hard/adversarial-source topics
 let breadth = 1               // researchers PER angle (default 1); >1 fans out more cheap Haiku retrieval, each with a different lens, for wider recall
 let synthesisMode = "auto"    // "auto" | "single" | "sharded": sharded = map-reduce (Sonnet per section → 1 Opus assembly), widens the output funnel
 let harvest = false           // harvest mode: skip the LLM reduce, return deduped raw findings (holds up for very large exhaustive runs; no assembly stall)
-let engineList = ["claude"]   // search engines researchers run on (see header)
+let engineList = ["auto"]     // search engines researchers run on (see header); auto = the engine's measured-best default
 let engineMode = "rotate"     // "rotate" | "all"
 let unknownEngines = []
 let searxngUrl = null          // SEARXNG_URL for the engine; default: inherit the environment
@@ -218,8 +230,9 @@ if (typeof args === "string") {
     const raw = (Array.isArray(args.engines) ? args.engines : String(args.engines).split(","))
       .map(e => String(e).trim().toLowerCase()).filter(Boolean)
     const wanted = raw.includes("all") ? [...new Set([...ALL_ENGINES, ...raw.filter(e => e !== "all")])] : raw
-    unknownEngines = wanted.filter(e => !ENGINES.includes(engineName(e)))
-    const known = [...new Set(wanted.filter(e => ENGINES.includes(engineName(e))))]
+    const isKnown = e => e === "auto" || ENGINES.includes(engineName(e))
+    unknownEngines = wanted.filter(e => !isKnown(e))
+    const known = [...new Set(wanted.filter(isKnown))]
     if (known.length) engineList = known
   }
   engineMode = args.engineMode === "all" ? "all" : "rotate"
@@ -236,7 +249,7 @@ if (!QUESTION) {
 // ─── Phase 0: Scope: decompose (complexity-scaled) + classify privacy sensitivity ───
 // Pure reasoning, NO web access: safe to run before the gate. Nothing leaves the host yet.
 phase("Scope")
-const scope = await agent(
+const scope = await task(
   "Decompose this research question into complementary research angles, size the effort to its complexity, and classify its privacy sensitivity.\n\n" +
   "## Question\n" + QUESTION + "\n\n" +
   "## Task A — complexity\n" +
@@ -300,7 +313,7 @@ if (SENSITIVE && !sensitiveConfirmed) {
     rationale: scope.sensitivityRationale || "",
     redactionNotes: scope.redactionNotes || "",
     plan: {
-      searchEngine: "self-hosted SearXNG via scripts/research.mjs (SEARXNG_URL or args.searxngUrl; raw snippets, fails closed if unset)",
+      searchEngine: "self-hosted SearXNG via scripts/research.mjs (SEARXNG_URL or args.searxngUrl; result pages fetched directly from this machine as verbatim excerpts; fails closed if unset)",
       angles: activeAngles.map(a => ({ label: a.label, query: a.query })),
       followUpWave: false,
       engines: engineList,
@@ -332,6 +345,7 @@ const RESEARCHER_PROMPT = (angle, alreadyCovered, lens, engine) =>
     ? "## Already covered by earlier researchers (don't just re-find these — go deeper or elsewhere)\n" + alreadyCovered.map(s => "- " + s).join("\n") + "\n\n"
     : "") +
   "## Method (start wide, then narrow)\n" +
+  "0. Use ONLY WebSearch and WebFetch. Never read local files; every source must be a public web page.\n" +
   "1. Search with WebSearch, starting BROAD, then narrow based on what you see. Short queries first; specific follow-ups after.\n" +
   "2. Read the most promising sources with WebFetch. Prefer primary/authoritative sources over SEO content farms.\n" +
   "3. Make roughly 3-8 tool calls total — scale to the angle. STOP once you have solid coverage; don't chase nonexistent sources or keep going after the angle is answered.\n\n" +
@@ -373,7 +387,7 @@ const FORWARDER_PROMPT = (engine, angle, alreadyCovered, lens) =>
   (searxngUrl ? "SEARXNG_URL=" + shq(searxngUrl) + " " : "") +
   "node \"$R\" run --plan \"$D/plan.json\" --engines " + shq(engine) + (SENSITIVE ? " --sensitive" : "") + " --timeout 540; echo \"EXIT=$?\"; rm -rf \"$D\"\n" +
   "```\n" +
-  "2. stdout is JSON. Take `briefs[0]`. If its `ok` is true, copy its coverageNote, searchesRun and every finding's fields verbatim into the structured output, and set angleLabel to `" + angle.label + "`. Findings with `raw: true` are search-engine snippets: copy them as they are.\n\n" +
+  "2. stdout is JSON. Take `briefs[0]`. If its `ok` is true, copy its coverageNote, searchesRun and every finding's fields verbatim into the structured output, and set angleLabel to `" + angle.label + "`. Findings with `raw: true` are SearXNG snippets or page excerpts: copy them as they are.\n\n" +
   "## Failure\n" +
   "If you see ENGINE_MISSING, `briefs[0].ok` is false, the output has no parseable JSON, or the command errors or times out (on a non-zero EXIT, stderr carries the reason, e.g. SEARXNG_URL not set), return findings: [] and a coverageNote that starts with `ENGINE_FAILED:` followed by a one-line reason (use `briefs[0].failure` when there is one, e.g. `ENGINE_FAILED: grok auth/credit failure: 402`).\n\nStructured output only."
 
@@ -399,7 +413,7 @@ const runWave = (angles, alreadyCovered, waveTag, perAngle = 1) => {
     engineStats[engine].researchers++
     const backed = ENGINE_BACKED.includes(engineName(engine))
     const claudeModel = engine.startsWith("claude:") ? engine.slice(7) : researchModel
-    return agent(backed ? FORWARDER_PROMPT(engine, angle, alreadyCovered, lens) : RESEARCHER_PROMPT(angle, alreadyCovered, lens, engine), {
+    return task(backed ? FORWARDER_PROMPT(engine, angle, alreadyCovered, lens) : RESEARCHER_PROMPT(angle, alreadyCovered, lens, engine), {
       label: waveTag + ":" + tag,
       phase: "Research",
       schema: BRIEF_SCHEMA,
@@ -454,7 +468,7 @@ if (secondWaveAllowed && allFindings.length > 0) {
     b.findings.map(f => "- [" + f.confidence + "] " + f.claim).join("\n")
   ).join("\n\n")
 
-  gap = await agent(
+  gap = await task(
     "## Gap check\n\n" +
     "Research question:\n" + QUESTION + "\n\n" +
     "The first research wave covered these angles and findings:\n\n" + digest + "\n\n" +
@@ -573,7 +587,7 @@ if (SHARD) {
     "### [" + i + "] " + f.claim + "\nConfidence: " + f.confidence + (multiEngine ? " · Engine: " + f.engine : "") + " · Source: " + f.sourceUrl + " (" + (f.sourceQuality || "unrated") + ")\nQuote: \"" + (f.quote || "") + "\"\n"
   ).join("\n")
   const sections = (await parallel(sectionEntries.map(([angle, fs]) => () =>
-    agent(
+    task(
       "## Section synthesis — " + angle + "\n\n" +
       "**Question:** " + QUESTION + "\n\n" +
       "Merge and ground the findings for THIS section only. Keep EVERY distinct grounded finding — do NOT drop for brevity; only merge true duplicates (combine their sources).\n\n" +
@@ -594,7 +608,7 @@ if (SHARD) {
       "- " + f.claim + " [" + f.confidence + "] (" + (f.sources || []).join(", ") + ")" + (f.evidence ? " — " + f.evidence : "")
     ).join("\n")
   ).join("\n\n")
-  report = await agent(
+  report = await task(
     "## Final assembly: research report\n\n" +
     "**Question:** " + QUESTION + "\n\n" +
     "The findings below are ALREADY grounded and merged within each section. Assemble them into one report.\n\n" +
@@ -607,7 +621,7 @@ if (SHARD) {
     { label: "assemble", schema: REPORT_SCHEMA }
   )
 } else {
-  report = await agent(
+  report = await task(
     "## Synthesis: research report\n\n" +
     "**Question:** " + QUESTION + "\n\n" +
     rankedFindings.length + " cited findings were gathered by the research wave(s). Synthesize them into a report.\n\n" +

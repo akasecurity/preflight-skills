@@ -146,13 +146,26 @@ report in which every claim cites a source a researcher quoted.
 /secure-research "Which self-hosted price trackers are maintained in 2026?" --engines claude,codex,agy
 ```
 
+With no `--engines`, `auto` picks `codex:gpt-6-luna@low` when codex is installed, else `claude:haiku`.
+That default comes from a measured comparison on the same three angles, where a quote counts as found
+if the cited page contains it verbatim or shares a 6-word run with it:
+
+| Researcher | Quote found on the cited page | Median time | Cost |
+|---|---|---|---|
+| `claude:haiku` | 48% | 53 s | $0.62 |
+| `claude:sonnet` | 67% | 55 s | $0.75 |
+| `codex:gpt-6-luna@low` | 95% | 34 s | subscription |
+
+Claude researchers read pages through WebFetch, which summarizes a page first, so their quotes are
+often paraphrases. Luna drew on fewer distinct sites, so mixing engines still adds breadth.
+
 | Engine | What runs | Needs |
 |---|---|---|
-| `claude` | `claude -p` limited to WebSearch/WebFetch, no MCP servers or user settings | Claude Code |
+| `claude` | `claude -p` limited to WebSearch/WebFetch, no MCP servers (your settings and hooks still apply) | Claude Code |
 | `codex` | `codex --search exec`, read-only sandbox (it can still read files you can) | Codex CLI |
 | `agy` | `agy -p --sandbox`, auto-approved | Antigravity CLI |
 | `grok` | `grok -p`, no tool restriction verified, so never part of `all` | Grok CLI and credit |
-| `searxng` | the SearXNG JSON API; raw snippets, no model reads them | `SEARXNG_URL` pointing at your instance, JSON format on |
+| `searxng` | the SearXNG JSON API, then the top result pages fetched directly; verbatim excerpts, no model reads them | `SEARXNG_URL` pointing at your instance, JSON format on |
 
 Every CLI runs in an empty temp directory, not your repo. That keeps the repo out of reach by
 default, but it is not a filesystem jail. Pick a model per engine with `<engine>:<model>[@<effort>]`,

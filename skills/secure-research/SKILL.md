@@ -16,11 +16,13 @@ If the question is underspecified (e.g. "what car should I buy" with no budget, 
 
 ## Usage
 
-`/secure-research <question> [--engines claude,codex,agy,grok,searxng|all] [--mode rotate|all] [--breadth <n>]`
+`/secure-research <question> [--engines auto|claude,codex,agy,grok,searxng|all] [--mode rotate|all] [--breadth <n>]`
 
 - **Engines.** `claude` · `codex` · `agy` · `grok` are model CLIs that each run their own web search.
-  `searxng` queries a self-hosted SearXNG instance at `$SEARXNG_URL` (JSON format enabled) and returns
-  raw result snippets that no third-party model reads. The default is `claude`. `all` means `claude`,
+  `searxng` queries a self-hosted SearXNG instance at `$SEARXNG_URL` (JSON format enabled), downloads
+  the top result pages directly from this machine, and returns verbatim page excerpts (snippets where
+  a page can't be fetched) that no third-party model reads. The default, `auto`, is
+  `codex:gpt-6-luna@low` when codex is installed, else `claude:haiku`. `all` means `claude`,
   `searxng`, `codex` and `agy`. `grok` runs only when named, because its headless tool policy is
   unverified.
 - **Models.** A model CLI takes an optional tune, `<engine>:<model>[@<effort>]`: for example
@@ -104,8 +106,9 @@ loop further.
 - **Cross-engine agreement.** The same claim found by two different engines is independent
   corroboration. A claim only one CLI engine found, citing a source no other engine surfaced,
   deserves caution: CLI engines can misquote or invent URLs.
-- **SearXNG snippets.** Findings marked `raw: true` are unread search snippets. Treat them as leads
-  and low-confidence evidence.
+- **SearXNG results.** Findings marked `raw: true` came from SearXNG: `fetched: true` ones are verbatim
+  page excerpts picked by query terms, the rest are search snippets. Nothing has judged them yet, so
+  read them as evidence to weigh, not as claims.
 - **Quote fidelity differs by engine.** `claude` researchers read pages through WebFetch, which
   summarizes a page before the model sees it, so their "quotes" are often paraphrases. `codex` quotes
   raw pages and was far more often verbatim in testing. Weigh a finding by whether its quote reads
@@ -117,6 +120,6 @@ loop further.
 ## Privacy note
 
 A CLI engine (`claude`, `codex`, `agy`, `grok`) sends the full research prompt to its provider, and
-that provider's search backend sees the queries. `searxng` sends only the query text, and only to
-your own instance. Redaction and a small angle count protect privacy more than the choice of engine
+that provider's search backend sees the queries. `searxng` sends the query text only to your own instance,
+then downloads result pages directly: those sites see your machine's address, not the query. Redaction and a small angle count protect privacy more than the choice of engine
 does.
