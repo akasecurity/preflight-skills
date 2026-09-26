@@ -2,6 +2,11 @@
 let s = "";
 process.stdin.on("data", (d) => (s += d));
 process.stdin.on("end", () => {
+  const all = s + "\n" + process.argv.slice(2).join(" ");
+  if (all.includes("=== RESEARCH BRIEF ===")) {
+    console.log("Here you go:\n" + JSON.stringify({ coverageNote: "e2e agy brief", searchesRun: 2, findings: [{ claim: "e2e agy claim", confidence: "high", sourceUrl: "https://example.com/agy", sourceTitle: "Example", sourceQuality: "primary", quote: "agy quote", importance: "central" }, { claim: "no source", confidence: "high", quote: "q" }] }));
+    return;
+  }
   if (s.includes("=== TEXT TO SCORE ===")) {
     console.log(JSON.stringify({ score: 50, reasoning: "e2e agy neutral read", findings: [{ ref: "\"robust\"", tell: "vocabulary tell", fix: "use a plain adjective" }] }));
   } else if (s.includes("=== REVIEWER READS")) {

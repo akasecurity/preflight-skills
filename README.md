@@ -9,14 +9,16 @@
 two blind parallel reads of a diff, design doc, or writing draft by different model families, then an
 independent judge that filters false positives. Report-only — it never merges, fixes, or acts.
 
-> Installed as the `preflight` plugin (skills: `crew-review`, `crew-consult`, `biascheck`, `unbias`). Repo: `akasecurity/preflight-skills`.
+> Installed as the `preflight` plugin (skills: `crew-review`, `crew-consult`, `biascheck`, `unbias`, `secure-research`). Repo: `akasecurity/preflight-skills`.
 
-Four skills ship: `crew-review` and `crew-consult` review code and design docs; `biascheck` scores a
+Five skills ship: `crew-review` and `crew-consult` review code and design docs; `biascheck` scores a
 writing draft for authenticity with a neutral median scorer (several reads by `gpt-5.6-terra`, median
 reported), report-only and never editing it. `unbias` is the odd one out — a prompt-only skill where
 the session model applies the tells catalog in place, not part of the crew engine. The two de-slop
 skills read different catalogs: `unbias` uses `shared/BIAS.md` (a forgiving self-editing catalog),
-`biascheck` uses `shared/TELLS.md` (a detection-oriented research reference).
+`biascheck` uses `shared/TELLS.md` (a detection-oriented research reference). `secure-research` is
+separate from the review crew: cited web research spread across several search engines (see
+[secure-research](#secure-research) below).
 
 From [akasecurity](https://akasecurity.io) · MIT · needs `node` · drives `claude` / `codex` / `agy`.
 
@@ -132,6 +134,37 @@ install pointers for `claude`, `codex`, and `agy`, and exits `1`.
 `--print-timeout` is pinned to the run's `--timeout` for the google seat.
 
 Platform: macOS/Linux (POSIX). Windows is untested — CLI detection and spawn shapes assume a POSIX PATH.
+
+
+## secure-research
+
+Cited web research spread across several search engines. The session model splits the question into
+angles, `scripts/research.mjs` runs one web researcher per angle, and the session model writes a
+report in which every claim cites a source a researcher quoted.
+
+```
+/secure-research "Which self-hosted price trackers are maintained in 2026?" --engines claude,codex,agy
+```
+
+| Engine | What runs | Needs |
+|---|---|---|
+| `claude` | `claude -p` with WebSearch/WebFetch only | Claude Code |
+| `codex` | `codex --search exec`, read-only sandbox | Codex CLI |
+| `agy` | `agy -p --sandbox`, auto-approved inside an empty temp workspace | Antigravity CLI |
+| `grok` | `grok -p` | Grok CLI and credit |
+| `searxng` | the SearXNG JSON API; raw snippets, no model reads them | `SEARXNG_URL` pointing at your instance |
+
+`--mode rotate` (the default) gives each angle one engine, round-robin. `--mode all` runs every angle
+on every engine, for cross-engine corroboration at engine-count cost. An engine that is missing, out
+of credit or logged out is reported and skipped, and the run continues.
+
+Sensitive topics (a named private person, health, legal or financial details, a specific target's
+vulnerability, credentials) are gated for your approval, have identifying details redacted from the
+queries, and run on `searxng` only. The engine refuses any other engine for them.
+
+In Claude Code, `/secure-research` hands off to the `preflight:secure-research-workflow` Workflow, so
+each researcher shows as its own agent and the run can resume. Other harnesses follow the steps in
+`skills/secure-research/SKILL.md`.
 
 ## Install per harness
 

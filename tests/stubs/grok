@@ -1,0 +1,5 @@
+#!/usr/bin/env node
+// grok stub: simulates an exhausted credit balance (the real failure mode seen live).
+console.log(JSON.stringify({ type: "error", message: "API error (status 402 Payment Required): usage balance exhausted" }));
+console.error("status 402 Payment Required");
+process.exit(1);
