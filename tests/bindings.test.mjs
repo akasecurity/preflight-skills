@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { bindingFor, FAMILIES } from "../scripts/crew.mjs";
+import { bindingFor, FAMILIES, AGY_TOOL_NOTE } from "../scripts/crew.mjs";
 
 test("claude binding: read-only tools, stdin packet, role-default models", () => {
   const recall = bindingFor("claude", undefined, "recall", 600);
@@ -35,10 +35,15 @@ test("openai binding: effort:model tune overrides both", () => {
   assert.equal(b.tune, "gpt-6-preview@high");
 });
 
-test("google binding: agy sandbox, print-timeout matches seat, packet via file", () => {
+test("google binding: agy sandbox, print-timeout matches seat, packet inline as the -p value", () => {
   const b = bindingFor("google", undefined, "recall", 300);
   assert.deepEqual(b.argv, ["agy", "--sandbox", "--print-timeout", "300s", "-p"]);
-  assert.equal(b.packetVia, "file");
+  assert.equal(b.packetVia, "arg");
+  // headless agy auto-denies shell/out-of-workspace tools, so its seats carry a tool-limits note
+  assert.equal(b.toolNote, AGY_TOOL_NOTE);
+  assert.match(b.toolNote, /Do NOT run shell or terminal commands/);
+  assert.equal(bindingFor("claude", undefined, "recall", 300).toolNote, undefined);
+  assert.equal(bindingFor("openai", undefined, "recall", 300).toolNote, undefined);
   const pinned = bindingFor("google", "gemini-3-pro", "recall", 600);
   assert.deepEqual(pinned.argv, ["agy", "--sandbox", "--print-timeout", "600s", "--model", "gemini-3-pro", "-p"]);
 });

@@ -48,6 +48,15 @@ test("runCrew: blind identical packets, parsed reads, judge sees reads", async (
   }
 });
 
+test("exit 0 with empty stdout: skip reason carries the CLI's stderr (agy permission auto-deny)", async () => {
+  const cap = mkdtempSync(join(tmpdir(), "crewcap-"));
+  const denied = { ...stubSeat("recall", "rd", cap, ""), argv: ["node", "-e", "process.stdin.resume();process.stdin.on('end',()=>console.error('jetski: no output produced — a tool required the \\\"command\\\" permission'))"] };
+  const crew = { reads: [denied, stubSeat("precision", "rp", cap, READ_REPLY)], judge: stubSeat("judge", "j3", cap, JUDGE_REPLY), sameFamily: true, judgeFallback: false };
+  const r = await runCrew(crew, packet, { cwd: process.cwd(), timeoutMs: 5000 });
+  assert.equal(r.reads[0].verdict, "skipped");
+  assert.match(r.reads[0].skipReason, /^no parsable JSON verdict in output: jetski: no output produced/);
+});
+
 test("a failed read becomes skipped with a reason; judge still runs", async () => {
   const cap = mkdtempSync(join(tmpdir(), "crewcap-"));
   const bad = { ...stubSeat("recall", "rb", cap, ""), argv: ["node", "-e", "process.exit(3)"] };

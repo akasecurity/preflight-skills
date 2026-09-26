@@ -93,8 +93,8 @@ errored — the report still prints in this case) · `2` a usage error (bad flag
 
 The reviewed repo is never touched. Writes are limited to `~/.preflight/` (telemetry: every model
 call appends one line to `modelcalls.jsonl` with timing + outcome, no tokens, for backend-health
-tracking) and, when a google seat runs, a temporary packet file in the OS temp directory (removed on
-success, kept on a timeout or error as a debug artifact).
+tracking). No packet file is written: every seat receives the packet on stdin, or, for agy, inline as
+its prompt argument.
 
 The telemetry home is `~/.preflight/` by default; set `CREW_HOME` to redirect it (telemetry then
 lands in `$CREW_HOME/.preflight/modelcalls.jsonl`). Nothing else honors `CREW_HOME`.
@@ -219,7 +219,7 @@ opinion — not a tally of the first two.
 ### FAQ
 
 **Does it change my code?** No. It prints a report to stdout and writes nothing into the reviewed
-repo. The only writes are local telemetry and a temporary packet file.
+repo. The only write is local telemetry.
 
 **Which models does it use?** Two seats from different families for the reads and a third
 independent seat as judge, driving the `claude`, `codex`, and `agy` CLIs you already have.
