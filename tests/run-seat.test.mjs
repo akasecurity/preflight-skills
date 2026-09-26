@@ -1,9 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, existsSync, mkdtempSync } from "node:fs";
+import { readFileSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { runSeat, killSeat, liveSeats, reapAllSeats } from "../scripts/crew.mjs";
+import { runSeat, killSeat, liveSeats, reapAllSeats, inlinePromptLimit } from "../scripts/crew.mjs";
 
 const echoSeat = (extra = {}) => ({
   role: "recall", family: "claude", tune: "test", brief: "BRIEF", contract: "CONTRACT",
@@ -36,18 +36,41 @@ test("spawn failure (missing binary) reports outcome error", async () => {
   assert.equal(r.outcome, "error");
 });
 
-test("file seat: packet lands in a temp file, prompt arg points at it", async () => {
+test("arg seat: brief+contract+packet travel inline as the last argv element, stdin empty", async () => {
   const seat = echoSeat({
-    packetVia: "file",
-    // echo the prompt arg, then read+echo the packet the prompt points at (proves it exists at run
-    // time — the file is cleaned up on success, so verify its content DURING the run, not after)
-    argv: ["node", "-e", "const a=process.argv[1];console.log(a);const p=a.match(/the file (\\S+)/)[1];console.log('PACKET:'+require('fs').readFileSync(p,'utf8'))", "--"],
+    packetVia: "arg",
+    // echo the appended prompt arg and whatever arrived on stdin (must be nothing)
+    argv: ["node", "-e", "let s='';process.stdin.on('data',d=>s+=d);process.stdin.on('end',()=>console.log(JSON.stringify({arg:process.argv[1],stdin:s})))", "--"],
   });
-  const r = await runSeat(seat, "FILE-PACKET-BODY", 5000);
+  const r = await runSeat(seat, "INLINE-PACKET-BODY", 5000);
   assert.equal(r.outcome, "ok");
-  assert.match(r.stdout, /BRIEF/);
-  assert.match(r.stdout, /ground-truth packet is the file /);
-  assert.match(r.stdout, /PACKET:FILE-PACKET-BODY/);
+  assert.deepEqual(JSON.parse(r.stdout), { arg: "BRIEF\n\nCONTRACT\n\nINLINE-PACKET-BODY", stdin: "" });
+});
+
+test("toolNote, when present, sits between brief and contract", async () => {
+  const r = await runSeat(echoSeat({ toolNote: "NOTE" }), "packet-body", 5000);
+  assert.match(r.stdout, /^BRIEF\n\nNOTE\n\nCONTRACT\n\nPACKET-BODY/);
+});
+
+test("arg seat: a prompt over the argv bound fails loudly without spawning or truncating", async () => {
+  const seat = echoSeat({ packetVia: "arg", argv: ["node", "-e", "console.log('SPAWNED')", "--"] });
+  const r = await runSeat(seat, "x".repeat(200), 5000, { argLimit: 100 });
+  assert.equal(r.outcome, "error");
+  assert.equal(r.stdout, "");
+  assert.match(r.stderr, /packet too large to pass inline to node \(\d+ bytes > 100-byte argv bound\)/);
+});
+
+test("arg seat: the bound counts utf8 bytes, not characters", async () => {
+  const seat = echoSeat({ packetVia: "arg", brief: "", contract: "", argv: ["node", "-e", "console.log('SPAWNED')", "--"] });
+  // 40 em-dashes = 40 chars but 120 bytes; with the 4 separator bytes that is 124 > 100
+  const r = await runSeat(seat, "—".repeat(40), 5000, { argLimit: 100 });
+  assert.equal(r.outcome, "error");
+});
+
+test("inlinePromptLimit: under Linux's 128 KiB per-arg cap and macOS's 1 MiB ARG_MAX", () => {
+  assert.ok(inlinePromptLimit("linux") < 128 * 1024);
+  assert.ok(inlinePromptLimit("darwin") < 1024 * 1024);
+  assert.ok(inlinePromptLimit("win32") < 32 * 1024);
 });
 
 test("multi-byte utf8 split across chunks is not corrupted", async () => {
@@ -62,31 +85,6 @@ test("malformed argv resolves outcome error instead of rejecting", async () => {
   const seat = echoSeat({ argv: [] });
   const r = await runSeat(seat, "x", 5000);
   assert.equal(r.outcome, "error");
-});
-
-test("file seat: temp packet is removed after a successful seat", async () => {
-  const seat = echoSeat({
-    packetVia: "file",
-    argv: ["node", "-e", "console.log(process.argv[1])", "--"], // echoes the appended prompt (exit 0)
-  });
-  const r = await runSeat(seat, "CLEANUP-OK", 5000);
-  assert.equal(r.outcome, "ok");
-  const m = r.stdout.match(/ground-truth packet is the file (\S+)/);
-  assert.ok(m, "prompt names the packet file");
-  assert.equal(existsSync(m[1]), false, "temp packet should be gone after success");
-});
-
-test("file seat: temp packet is kept on timeout (debug artifact)", async () => {
-  const seat = echoSeat({
-    packetVia: "file",
-    // print the prompt (so we capture the path), THEN hang until killed
-    argv: ["node", "-e", "console.log(process.argv[1]);setTimeout(()=>{},10000)", "--"],
-  });
-  const r = await runSeat(seat, "KEEP-ON-TIMEOUT", 400);
-  assert.equal(r.outcome, "timeout");
-  const m = r.stdout.match(/ground-truth packet is the file (\S+)/);
-  assert.ok(m, "prompt names the packet file before the hang");
-  assert.equal(existsSync(m[1]), true, "temp packet should survive a timeout");
 });
 
 const isAlive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
