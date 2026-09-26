@@ -42,7 +42,7 @@ To pin a specific version:
 
 ```json
 {
-  "plugin": ["preflight-skills@git+https://github.com/akasecurity/preflight-skills.git#v0.2.2"]
+  "plugin": ["preflight-skills@git+https://github.com/akasecurity/preflight-skills.git#v0.3.0"]
 }
 ```
 

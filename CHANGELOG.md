@@ -3,7 +3,7 @@
 Notable changes to preflight-skills. Format loosely follows Keep a Changelog;
 versions follow semver.
 
-## [Unreleased]
+## [0.3.0] — 2026-09-26
 
 ### Added
 - `secure-research`: cited web research spread across search engines (`claude`, `codex`, `agy`,
