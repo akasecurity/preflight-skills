@@ -49,9 +49,9 @@ Up to 8 findings. If you find nothing usable, return an empty findings array and
 // its read-only sandbox, which still allows file READS anywhere the user can read; agy runs sandboxed
 // with auto-approve; grok has no tool restriction we could verify. Every CLI runs in an empty temp
 // directory, which keeps the caller's repo out of reach by default but is not a filesystem jail.
-// Every CLI binding is read-only apart from web access. packetVia "stdin" pipes the prompt;
-// "arg" passes the whole prompt as the final argument. agy and grok need "arg": headless agy
-// auto-denies the read_file permission a temp-file packet would need, and prints nothing.
+// packetVia "stdin" pipes the prompt; "arg" passes it inline as the final argument (crew.mjs runSeat).
+// agy and grok need "arg": headless agy auto-denies the read_file permission a temp-file packet
+// would need, and prints nothing.
 // An engine spec is "<engine>[:<model>[@<effort>]]", e.g. claude:sonnet or codex:gpt-6-luna@low, so one
 // run can compare models on the same angles. A bare engine takes the CLI's default model (claude: haiku).
 export function parseEngineSpec(spec) {
@@ -182,6 +182,7 @@ export function failureReason(engine, result, brief) {
   // Model prose can mention "quota" or "429" legitimately, so stdout counts only when the CLI failed.
   const text = result.outcome === "error" ? `${result.stdout}\n${result.stderr}` : result.stderr;
   if (result.outcome === "timeout") return `${engine} timed out`;
+  if (result.outcome === "refused") return `${engine} not run: ${result.stderr.trim().split("\n")[0]}`;
   if (AUTH_RE.test(text)) return `${engine} auth/credit failure: ${text.match(AUTH_RE)[0]}`;
   if (result.outcome === "error") return `${engine} exited ${result.code ?? "abnormally"}${result.stderr ? `: ${result.stderr.trim().split("\n").at(-1).slice(0, 160)}` : ""}`;
   return `${engine} returned no parseable brief`;
@@ -350,9 +351,9 @@ export async function runResearch(plan, { engines, mode = "rotate", breadth = 1,
       const prompt = researcherPrompt(plan, job.angle, { lens, alreadyCovered: plan.alreadyCovered ?? [] });
       const spec = parseEngineSpec(job.engine);
       const b = bindingFor(spec.name, timeoutSec, spec);
-      // runSeat pipes brief+contract+packet on stdin. For an "arg" engine the same text also rides
-      // as the final argument, which is what the CLI actually reads.
-      const seat = { ...b, packetVia: "stdin", argv: b.packetVia === "arg" ? [...b.argv, `${prompt}\n\n${BRIEF_CONTRACT}`] : b.argv, brief: prompt, contract: BRIEF_CONTRACT };
+      // runSeat delivers brief + contract on stdin, or inline as the final argument for an "arg"
+      // engine, where it also enforces the argv size bound (a refusal, never a truncation).
+      const seat = { ...b, brief: prompt, contract: BRIEF_CONTRACT };
       // Each CLI runs in its own empty directory, never the caller's repo: web research needs no
       // files, and relative paths from a prompt injection in a fetched page resolve to nothing.
       // This is not a jail (see the binding notes above).
