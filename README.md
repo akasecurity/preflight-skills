@@ -129,7 +129,7 @@ install pointers for `claude`, `codex`, and `agy`, and exits `1`.
 |---|---|---|---|---|
 | claude | `claude` | stdin | `--allowedTools Read Grep Glob` | live-verified 2026-07-08 |
 | openai | `codex` | stdin | `--sandbox read-only` | live-verified 2026-07-09 |
-| google | `agy` | temp-file pointer (agy takes the prompt as an argument, not stdin) | `agy --sandbox` = terminal restrictions, not strict read-only — the report notes this whenever a google seat runs | live-verified 2026-07-08 |
+| google | `agy` | inline `-p` argument (agy takes the prompt as an argument; while the seat runs, the process list shows it to other local users) | `agy --sandbox` = terminal restrictions, not strict read-only — the report notes this whenever a google seat runs | live-verified 2026-07-08 |
 
 `--print-timeout` is pinned to the run's `--timeout` for the google seat.
 

@@ -27,8 +27,12 @@ versions follow semver.
   packet file (outside the workspace) and the shell commands agy used to explore the repo. The
   packet now goes inline as the `-p` prompt, and agy seats get a note to work from the packet and
   use only in-workspace file viewing. No temp packet file is written anymore. A prompt over the
-  platform's argv bound (768 KiB on macOS, 120 KiB on Linux) fails the seat with a clear reason and
-  is never truncated.
+  platform's argv bound (768 KiB on macOS, 120 KiB on Linux, 30 KiB on Windows), or one the OS
+  rejects with E2BIG, is refused before spawning (`not run: …`, outcome `refused` in telemetry) and
+  is never truncated. Trade-off: an inline prompt is visible in the process list to other local
+  users while the seat runs, which the old owner-only temp file was not.
+- agy seats are no longer told they "may freely explore the repository". agy explored with shell
+  commands, which headless mode auto-denies.
 - A seat that exits 0 without a parsable reply now shows its stderr in the skip reason, not just
   "no parsable JSON verdict".
 
