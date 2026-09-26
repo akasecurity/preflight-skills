@@ -148,11 +148,16 @@ report in which every claim cites a source a researcher quoted.
 
 | Engine | What runs | Needs |
 |---|---|---|
-| `claude` | `claude -p` with WebSearch/WebFetch only | Claude Code |
-| `codex` | `codex --search exec`, read-only sandbox | Codex CLI |
-| `agy` | `agy -p --sandbox`, auto-approved inside an empty temp workspace | Antigravity CLI |
-| `grok` | `grok -p` | Grok CLI and credit |
-| `searxng` | the SearXNG JSON API; raw snippets, no model reads them | `SEARXNG_URL` pointing at your instance |
+| `claude` | `claude -p` limited to WebSearch/WebFetch, no MCP servers or user settings | Claude Code |
+| `codex` | `codex --search exec`, read-only sandbox (it can still read files you can) | Codex CLI |
+| `agy` | `agy -p --sandbox`, auto-approved | Antigravity CLI |
+| `grok` | `grok -p`, no tool restriction verified, so never part of `all` | Grok CLI and credit |
+| `searxng` | the SearXNG JSON API; raw snippets, no model reads them | `SEARXNG_URL` pointing at your instance, JSON format on |
+
+Every CLI runs in an empty temp directory, not your repo. That keeps the repo out of reach by
+default, but it is not a filesystem jail. Pick a model per engine with `<engine>:<model>[@<effort>]`,
+e.g. `--engines claude:haiku,claude:sonnet,codex:gpt-6-luna@low` compares three models on the same
+angles. At most 6 researchers run at once (`--concurrency`).
 
 `--mode rotate` (the default) gives each angle one engine, round-robin. `--mode all` runs every angle
 on every engine, for cross-engine corroboration at engine-count cost. An engine that is missing, out
@@ -163,7 +168,9 @@ vulnerability, credentials) are gated for your approval, have identifying detail
 queries, and run on `searxng` only. The engine refuses any other engine for them.
 
 In Claude Code, `/secure-research` hands off to the `preflight:secure-research-workflow` Workflow, so
-each researcher shows as its own agent and the run can resume. Other harnesses follow the steps in
+each researcher shows as its own agent and the run can resume. Its searxng, codex, agy and grok
+researchers run through `research.mjs` too, so a sensitive run fails closed there when `SEARXNG_URL`
+is unset (or pass `searxngUrl`). Other harnesses follow the steps in
 `skills/secure-research/SKILL.md`.
 
 ## Install per harness
