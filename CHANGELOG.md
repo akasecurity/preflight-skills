@@ -15,6 +15,11 @@ versions follow semver.
   Engines take a model tune (`claude:sonnet`, `codex:gpt-6-luna@low`) so one run can compare models,
   and briefs report cost or tokens when the CLI does. `all` leaves out `grok`, whose headless tool
   policy is unverified.
+  The default engine, `auto`, is `codex:gpt-6-luna@low` when codex is installed and `claude:haiku`
+  otherwise. It measured best on quote fidelity, speed and cost. The searxng engine fetches the top
+  result pages itself and returns verbatim excerpts.
+  Every workflow subagent prompt starts with a task-isolation guard, because a live run showed
+  subagents picking up the parent session's latest chat message and answering that instead.
 
 ## [0.2.2] — 2026-07-20
 

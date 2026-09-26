@@ -35,11 +35,16 @@ test("workflow lenses match the engine's, so a lens means the same on both paths
   assert.deepEqual(new Function(`return ${m[1]}`)(), ENGINE_LENSES);
 });
 
-test("default run: Claude-native researchers only, no forwarder", async () => {
-  const { research, result } = await runWorkflow("question");
+test("default run: auto, through the engine (codex luna if installed, else claude haiku)", async () => {
+  const { research, result } = await runWorkflow({ question: "q", enginePath: "/x/r.mjs" });
   assert.equal(research.length, 3);
-  assert.ok(research.every((c) => c.prompt.startsWith("## Researcher")));
-  assert.deepEqual(result.stats.engines, ["claude"]);
+  assert.ok(research.every((c) => /--engines 'auto'/.test(c.prompt)));
+  assert.deepEqual(result.stats.engines, ["auto"]);
+});
+
+test("engines: ['claude'] keeps the Claude-native researcher", async () => {
+  const { research } = await runWorkflow({ question: "q", engines: ["claude"] });
+  assert.ok(research.every((c) => c.prompt.includes("## Researcher —") && c.model === "haiku"));
 });
 
 test("workflow engine lists match the engine's (all excludes grok on both paths)", () => {
@@ -51,7 +56,7 @@ test("workflow engine lists match the engine's (all excludes grok on both paths)
 test("rotate over all engines: searxng and CLI engines go through research.mjs with a valid one-angle plan", async () => {
   const { research } = await runWorkflow({ question: "What trackers exist?", engines: "all", enginePath: "/x/research.mjs" });
   assert.deepEqual(research.map((c) => c.label), ["research:A1@claude", "research:A2@searxng", "research:A3@codex"]);
-  assert.match(research[0].prompt, /^## Researcher/);
+  assert.match(research[0].prompt, /## Researcher —/);
   for (const fwd of research.slice(1)) {
     assert.equal(fwd.model, "haiku");
     assert.match(fwd.prompt, /R='\/x\/research\.mjs'/);
@@ -105,7 +110,7 @@ test("engine failures are returned, not just logged", async () => {
 });
 
 test("maxAngles is clamped to at least one angle", async () => {
-  const { research } = await runWorkflow({ question: "q", maxAngles: 0 });
+  const { research } = await runWorkflow({ question: "q", maxAngles: 0, engines: ["claude"] });
   assert.equal(research.length, 1);
 });
 
@@ -113,4 +118,10 @@ test("unknown engine is rejected before any agent runs", async () => {
   const { result, calls } = await runWorkflow({ question: "q", engines: ["claude", "bing"] });
   assert.match(result.error, /Unknown engine\(s\): bing/);
   assert.equal(calls.length, 0);
+});
+
+test("every subagent prompt starts with the task-isolation guard", async () => {
+  const { calls } = await runWorkflow({ question: "q", engines: ["claude", "codex"], enginePath: "/x/r.mjs" });
+  assert.ok(calls.length >= 5);
+  for (const c of calls) assert.match(c.prompt, /^You are one step of an automated research pipeline\. Your ENTIRE task is the prompt below\./, c.label);
 });

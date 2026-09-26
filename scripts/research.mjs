@@ -12,7 +12,8 @@ import { runSeat, extractJson, reapAllSeats } from "./crew.mjs";
 
 export const USAGE = `usage: research.mjs engines
        research.mjs run --plan <plan.json> [--engines e1,e2|all] [--mode rotate|all] [--breadth <n>] [--sensitive] [--timeout <sec>] [--concurrency <n>]
-engines: claude · codex · agy · grok (model CLIs, each runs its own web search) · searxng (needs SEARXNG_URL)
+engines: auto (default: codex:gpt-6-luna@low if codex is installed, else claude:haiku)
+         claude · codex · agy · grok (model CLIs, each runs its own web search) · searxng (needs SEARXNG_URL)
          a model CLI takes an optional tune, <engine>:<model>[@<effort>], e.g. claude:sonnet or codex:gpt-6-luna@low
 plan.json: {"question":"…","angles":[{"label":"…","query":"…","rationale":"…"}],"alreadyCovered":["host", …],"sensitive":false,"cursor":0}
 "all" = claude, searxng, codex, agy; grok runs only when named (its tool policy is unverified)`;
@@ -22,6 +23,11 @@ export const ENGINES = ["claude", "searxng", "codex", "grok", "agy"];
 // allow-list we could verify, so it runs only when named explicitly.
 export const ALL_ENGINES = ["claude", "searxng", "codex", "agy"];
 export const DEFAULT_CONCURRENCY = 6;
+// "auto" (the default) picks the researcher that measured best on quote fidelity, speed and cost:
+// codex with gpt-6-luna at low effort when codex is installed, else claude with haiku.
+export const AUTO_CODEX = "codex:gpt-6-luna@low";
+export const AUTO_FALLBACK = "claude:haiku";
+export const resolveAuto = (available) => (available.has("codex") ? AUTO_CODEX : AUTO_FALLBACK);
 const CLI_BIN = { claude: "claude", codex: "codex", grok: "grok", agy: "agy" };
 
 // A second, third… researcher on the same angle gets a different lens, so extra breadth buys
@@ -56,10 +62,11 @@ export function parseEngineSpec(spec) {
 
 export function bindingFor(engine, timeoutSec, { model = "", effort = "" } = {}) {
   if (engine === "claude") {
-    // JSON output carries the run's cost. --strict-mcp-config and empty --setting-sources keep the
-    // user's MCP servers, hooks and settings out of a researcher that reads untrusted web pages.
+    // JSON output carries the run's cost. --strict-mcp-config keeps the user's MCP servers out of a
+    // researcher that reads untrusted web pages. User settings still load on purpose, so the user's
+    // own guard hooks (e.g. egress/secret guards on WebFetch) keep covering the researcher.
     return { packetVia: "stdin", output: "claude-json", argv: ["claude", "-p", "--model", model || "haiku", "--tools", "WebSearch,WebFetch", "--allowedTools", "WebSearch", "WebFetch",
-      "--strict-mcp-config", "--setting-sources", "", "--no-session-persistence", "--output-format", "json"] };
+      "--strict-mcp-config", "--no-session-persistence", "--output-format", "json"] };
   }
   if (engine === "codex") {
     const argv = ["codex", "--search", "exec", "--skip-git-repo-check", "--sandbox", "read-only"];
@@ -180,34 +187,98 @@ export function failureReason(engine, result, brief) {
   return `${engine} returned no parseable brief`;
 }
 
-// SearXNG returns search results, not an answer. The engine hands the raw snippets back as
-// low-confidence findings and no third-party model reads them. The calling session model, which
-// already holds the question, weighs them at synthesis. That is what keeps a sensitive topic's
-// fan-out on self-hosted infrastructure.
-export async function runSearxng(angle, { baseUrl, fetchImpl = fetch, timeoutMs = 25_000, limit = 8 }) {
+// SearXNG returns search results, not an answer. The engine then downloads the top result pages
+// itself, straight from this machine, and returns verbatim page excerpts (snippets where a page
+// can't be fetched). No model reads any of it here: the calling session model, which already holds
+// the question, weighs it at synthesis. That keeps a sensitive topic's fan-out on self-hosted search
+// plus direct page downloads, with no third-party model involved. The sites fetched see this
+// machine's address, not the query.
+const PRIVATE_HOST_RE = /^(localhost|.+\.local|.+\.internal|.+\.lan|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|169\.254\.|0\.|\[?::1\]?$|\[?f[cd][0-9a-f]{2}:|\[?fe80:)/i;
+export function isPublicHttpUrl(u) {
+  try { const x = new URL(u); return (x.protocol === "http:" || x.protocol === "https:") && !PRIVATE_HOST_RE.test(x.hostname); } catch { return false; }
+}
+
+const ENTITIES = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " ", "#39": "'" };
+export function htmlToText(html) {
+  return String(html)
+    .replace(/<(script|style|noscript|svg|template|head)[\s\S]*?<\/\1>/gi, " ")
+    .replace(/<!--[\s\S]*?-->/g, " ")
+    .replace(/<\/(p|div|li|h[1-6]|tr|section|article|br)>|<br\s*\/?>/gi, "\n")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&(#\d+|#x[0-9a-f]+|[a-z]+|#39);/gi, (m, e) => {
+      if (ENTITIES[e.toLowerCase()]) return ENTITIES[e.toLowerCase()];
+      if (e[0] === "#") { const n = e[1].toLowerCase() === "x" ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10); return Number.isFinite(n) ? String.fromCodePoint(n) : " "; }
+      return " ";
+    })
+    .replace(/[ \t\f\v\r]+/g, " ")
+    .replace(/\n\s*/g, "\n")
+    .trim();
+}
+
+// The page passages that mention the most query terms, kept in page order, up to `max` characters.
+export function excerptFor(text, query, max = 1200) {
+  const terms = [...new Set(String(query).toLowerCase().match(/[a-z0-9][a-z0-9.+-]{2,}/g) ?? [])].filter((t) => !/^(site|the|and|for|with|from)$/.test(t));
+  const chunks = text.split(/\n+|(?<=[.!?])\s+(?=[A-Z])/).map((c) => c.trim()).filter((c) => c.length >= 40);
+  const scored = chunks.map((c, i) => ({ c, i, n: terms.reduce((k, t) => k + (c.toLowerCase().includes(t) ? 1 : 0), 0) })).filter((x) => x.n > 0);
+  const picked = [];
+  let len = 0;
+  for (const x of scored.sort((a, b) => b.n - a.n || a.i - b.i)) {
+    if (len + x.c.length > max && picked.length) continue;
+    picked.push(x); len += x.c.length + 1;
+    if (len >= max) break;
+  }
+  const out = picked.sort((a, b) => a.i - b.i).map((x) => x.c).join(" … ");
+  return (out || chunks.slice(0, 3).join(" ")).slice(0, max);
+}
+
+export async function fetchPageText(url, { fetchImpl = fetch, timeoutMs = 10_000, maxBytes = 2_000_000 } = {}) {
+  if (!isPublicHttpUrl(url)) return undefined;
+  try {
+    const r = await fetchImpl(url, { signal: AbortSignal.timeout(timeoutMs), redirect: "follow", headers: { accept: "text/html,text/plain;q=0.9" } });
+    if (!r.ok || (r.url && !isPublicHttpUrl(r.url))) return undefined;
+    const type = r.headers?.get?.("content-type") ?? "text/html";
+    if (!/text\/html|text\/plain|application\/xhtml/i.test(type)) return undefined;
+    const body = (await r.text()).slice(0, maxBytes);
+    return /html/i.test(type) ? htmlToText(body) : body;
+  } catch { return undefined; }
+}
+
+export async function runSearxng(angle, { baseUrl, fetchImpl = fetch, timeoutMs = 25_000, limit = 8, pages = 4 }) {
   const started = Date.now();
   const url = `${baseUrl.replace(/\/+$/, "")}/search?format=json&q=${encodeURIComponent(angle.query)}`;
   let results;
   try {
     const r = await fetchImpl(url, { signal: AbortSignal.timeout(timeoutMs) });
-    if (!r.ok) return { failure: `searxng HTTP ${r.status}`, ms: Date.now() - started };
+    if (!r.ok) return { failure: `searxng HTTP ${r.status}${r.status === 403 ? " (is format=json enabled in the instance's settings.yml?)" : ""}`, ms: Date.now() - started };
     results = (await r.json()).results ?? [];
   } catch (e) {
     return { failure: `searxng unreachable: ${String(e?.message ?? e).slice(0, 160)}`, ms: Date.now() - started };
   }
   const seen = new Set();
-  const findings = [];
+  const top = [];
   for (const r of results) {
-    if (!r?.url || seen.has(r.url) || !r.content) continue;
+    if (!r?.url || seen.has(r.url) || (!r.content && !isPublicHttpUrl(r.url))) continue;
     seen.add(r.url);
+    top.push(r);
+    if (top.length >= limit) break;
+  }
+  // The first `pages` results get their page fetched, in parallel; the rest stay snippets.
+  const texts = await Promise.all(top.map((r, i) => (i < pages ? fetchPageText(r.url, { fetchImpl, timeoutMs: Math.min(10_000, timeoutMs) }) : undefined)));
+  let fetched = 0;
+  const findings = [];
+  top.forEach((r, i) => {
+    const page = texts[i] ? excerptFor(texts[i], angle.query) : "";
+    const useful = page.length >= 120;
+    if (useful) fetched++;
+    const quote = useful ? page : String(r.content ?? "").slice(0, 400);
+    if (!quote) return;
     findings.push({
       claim: String(r.title ?? r.url), confidence: "low", sourceUrl: r.url, sourceTitle: String(r.title ?? ""),
-      sourceQuality: "secondary", quote: String(r.content).slice(0, 400), importance: "supporting", raw: true,
+      sourceQuality: "secondary", quote, importance: "supporting", raw: true, ...(useful ? { fetched: true } : {}),
     });
-    if (findings.length >= limit) break;
-  }
+  });
   return {
-    brief: { coverageNote: `SearXNG: ${results.length} results, ${findings.length} snippets kept (raw snippets, not model-read)`, searchesRun: 1, findings },
+    brief: { coverageNote: `SearXNG: ${results.length} results; ${fetched} page excerpt(s) fetched directly, ${findings.length - fetched} snippet(s) (raw, not model-read)`, searchesRun: 1, findings },
     ms: Date.now() - started,
   };
 }
@@ -231,7 +302,8 @@ export function assignJobs(angles, engines, { mode = "rotate", breadth = 1, curs
 // searxng, and a sensitive run without SearXNG is refused rather than silently widened.
 export function resolveEngines(requested, available, { sensitive = false } = {}) {
   const warnings = [];
-  const wanted = requested.includes("all") ? [...new Set([...ALL_ENGINES, ...requested.filter((e) => e !== "all")])] : requested;
+  const expanded = requested.map((e) => (e === "auto" ? resolveAuto(available) : e));
+  const wanted = expanded.includes("all") ? [...new Set([...ALL_ENGINES, ...expanded.filter((e) => e !== "all")])] : expanded;
   const nameOf = (e) => parseEngineSpec(e).name;
   const unknown = wanted.filter((e) => !ENGINES.includes(nameOf(e)));
   if (unknown.length) return { ok: false, error: `unknown engine(s): ${unknown.join(", ")}` };
@@ -330,7 +402,9 @@ export function parseArgs(argv) {
   if (!Number.isFinite(timeoutSec) || timeoutSec <= 0 || timeoutSec > 3600) return { ok: false, error: "--timeout must be 1-3600 seconds" };
   const concurrency = vals.concurrency === undefined ? DEFAULT_CONCURRENCY : Number(vals.concurrency);
   if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 32) return { ok: false, error: "--concurrency must be an integer 1-32" };
-  const engines = (vals.engines ?? "claude").split(",").map((e) => e.trim().toLowerCase()).filter(Boolean);
+  // Only the engine name is case-folded; a model id after ":" is passed through as written.
+  const engines = (vals.engines ?? "auto").split(",").map((e) => e.trim()).filter(Boolean)
+    .map((e) => { const i = e.indexOf(":"); return i === -1 ? e.toLowerCase() : e.slice(0, i).toLowerCase() + e.slice(i); });
   return { ok: true, value: { cmd, planPath: vals.plan, engines, mode, breadth, timeoutSec, concurrency, sensitive } };
 }
 

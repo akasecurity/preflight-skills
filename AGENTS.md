@@ -71,7 +71,7 @@ None of them update on their own.
 No CI or branch protection, so the suite is the only gate. Run it before pushing to `main`:
 
 ```bash
-bun run test        # 133 tests; wraps node --test 'tests/*.test.mjs'
+bun run test        # 137 tests; wraps node --test 'tests/*.test.mjs'
 ```
 
 The glob matters — `node --test tests/` alone picks up the stub binaries in `tests/stubs/` and
