@@ -46,7 +46,8 @@ It went stale once already, describing two skills after four had shipped.
 - `workflows/secure-research-workflow.js` — the Claude Code adapter for `secure-research`, shipped
   through the Claude plugin's default `workflows/` scan. A Workflow script can't import modules or
   spawn processes, so its CLI-engine researchers are Haiku forwarders that run `research.mjs`. Keep
-  its `LENSES` identical to the engine's; `tests/workflow.test.mjs` checks that.
+  its `LENSES`, `ENGINES` and `ALL_ENGINES` identical to the engine's; `tests/workflow.test.mjs`
+  checks that.
 - `skills/*/SKILL.md` — the contracts. These are what the model reads.
 - `shared/BIAS.md` — the forgiving self-editing catalog `unbias` applies.
 - `shared/TELLS.md` — the detection-oriented reference `biascheck` scores against. Two different
@@ -70,7 +71,7 @@ None of them update on their own.
 No CI or branch protection, so the suite is the only gate. Run it before pushing to `main`:
 
 ```bash
-bun run test        # 125 tests; wraps node --test 'tests/*.test.mjs'
+bun run test        # 133 tests; wraps node --test 'tests/*.test.mjs'
 ```
 
 The glob matters — `node --test tests/` alone picks up the stub binaries in `tests/stubs/` and

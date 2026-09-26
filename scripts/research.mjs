@@ -11,11 +11,17 @@ import { join, delimiter } from "node:path";
 import { runSeat, extractJson, reapAllSeats } from "./crew.mjs";
 
 export const USAGE = `usage: research.mjs engines
-       research.mjs run --plan <plan.json> [--engines e1,e2|all] [--mode rotate|all] [--breadth <n>] [--sensitive] [--timeout <sec>]
+       research.mjs run --plan <plan.json> [--engines e1,e2|all] [--mode rotate|all] [--breadth <n>] [--sensitive] [--timeout <sec>] [--concurrency <n>]
 engines: claude · codex · agy · grok (model CLIs, each runs its own web search) · searxng (needs SEARXNG_URL)
-plan.json: {"question":"…","angles":[{"label":"…","query":"…","rationale":"…"}],"alreadyCovered":["host", …],"sensitive":false}`;
+         a model CLI takes an optional tune, <engine>:<model>[@<effort>], e.g. claude:sonnet or codex:gpt-6-luna@low
+plan.json: {"question":"…","angles":[{"label":"…","query":"…","rationale":"…"}],"alreadyCovered":["host", …],"sensitive":false,"cursor":0}
+"all" = claude, searxng, codex, agy; grok runs only when named (its tool policy is unverified)`;
 
 export const ENGINES = ["claude", "searxng", "codex", "grok", "agy"];
+// "all" expands to these. grok is left out on purpose: it has no read-only sandbox or tool
+// allow-list we could verify, so it runs only when named explicitly.
+export const ALL_ENGINES = ["claude", "searxng", "codex", "agy"];
+export const DEFAULT_CONCURRENCY = 6;
 const CLI_BIN = { claude: "claude", codex: "codex", grok: "grok", agy: "agy" };
 
 // A second, third… researcher on the same angle gets a different lens, so extra breadth buys
@@ -33,28 +39,66 @@ export const BRIEF_CONTRACT = `Reply with ONLY one JSON object, no prose and no 
 Up to 8 findings. If you find nothing usable, return an empty findings array and say why in coverageNote.`;
 
 // ── engine bindings ─────────────────────────────────────────────────────────
+// What each binding restricts, stated plainly: claude is limited to WebSearch/WebFetch; codex runs in
+// its read-only sandbox, which still allows file READS anywhere the user can read; agy runs sandboxed
+// with auto-approve; grok has no tool restriction we could verify. Every CLI runs in an empty temp
+// directory, which keeps the caller's repo out of reach by default but is not a filesystem jail.
 // Every CLI binding is read-only apart from web access. packetVia "stdin" pipes the prompt;
 // "arg" passes the whole prompt as the final argument. agy and grok need "arg": headless agy
 // auto-denies the read_file permission a temp-file packet would need, and prints nothing.
-export function bindingFor(engine, timeoutSec) {
+// An engine spec is "<engine>[:<model>[@<effort>]]", e.g. claude:sonnet or codex:gpt-6-luna@low, so one
+// run can compare models on the same angles. A bare engine takes the CLI's default model (claude: haiku).
+export function parseEngineSpec(spec) {
+  const [name, tune = ""] = String(spec).trim().split(/:(.*)/s);
+  const [model = "", effort = ""] = tune.split("@");
+  return { id: String(spec).trim(), name: name.toLowerCase(), model, effort };
+}
+
+export function bindingFor(engine, timeoutSec, { model = "", effort = "" } = {}) {
   if (engine === "claude") {
-    return { packetVia: "stdin", argv: ["claude", "-p", "--model", "haiku", "--tools", "WebSearch,WebFetch", "--allowedTools", "WebSearch", "WebFetch", "--no-session-persistence"] };
+    // JSON output carries the run's cost. --strict-mcp-config and empty --setting-sources keep the
+    // user's MCP servers, hooks and settings out of a researcher that reads untrusted web pages.
+    return { packetVia: "stdin", output: "claude-json", argv: ["claude", "-p", "--model", model || "haiku", "--tools", "WebSearch,WebFetch", "--allowedTools", "WebSearch", "WebFetch",
+      "--strict-mcp-config", "--setting-sources", "", "--no-session-persistence", "--output-format", "json"] };
   }
   if (engine === "codex") {
-    return { packetVia: "stdin", argv: ["codex", "--search", "exec", "--skip-git-repo-check", "--sandbox", "read-only", "-"] };
+    const argv = ["codex", "--search", "exec", "--skip-git-repo-check", "--sandbox", "read-only"];
+    if (model) argv.push("-c", `model=${model}`);
+    if (effort) argv.push("-c", `model_reasoning_effort=${effort}`);
+    return { packetVia: "stdin", output: "text", argv: [...argv, "-"] };
   }
   if (engine === "agy") {
     // Headless agy auto-denies any tool that needs a permission prompt, including read_url, and a
     // single denial ends the turn with no output. Its allow-rules are per-domain (read_url(<domain>))
     // and live in the user's global settings, which don't fit research across arbitrary sites. So
     // agy runs with auto-approve, but inside --sandbox (restricted terminal) and an empty throwaway
-    // workspace (see runResearch). It can read the web and nothing of the user's.
-    return { packetVia: "arg", argv: ["agy", "--sandbox", "--dangerously-skip-permissions", "--print-timeout", `${timeoutSec}s`, "-p"] };
+    // workspace (see runResearch).
+    const argv = ["agy", "--sandbox", "--dangerously-skip-permissions", "--print-timeout", `${timeoutSec}s`];
+    if (model) argv.push("--model", model);
+    if (effort) argv.push("--effort", effort);
+    return { packetVia: "arg", output: "text", argv: [...argv, "-p"] };
   }
   if (engine === "grok") {
-    return { packetVia: "arg", argv: ["grok", "-p"] };
+    // Unverified: grok's headless tool policy. Kept out of "all" (see ALL_ENGINES).
+    const argv = ["grok"];
+    if (model) argv.push("-m", model);
+    if (effort) argv.push("--reasoning-effort", effort);
+    return { packetVia: "arg", output: "text", argv: [...argv, "-p"] };
   }
   return undefined;
+}
+
+// The answer text plus whatever usage the CLI reports: claude's JSON carries total_cost_usd,
+// codex prints "tokens used N" on stderr. Absent usage stays absent, never a guessed number.
+export function readOutput(binding, result) {
+  if (binding.output === "claude-json") {
+    try {
+      const j = JSON.parse(result.stdout);
+      return { text: String(j.result ?? ""), usage: { usd: Number(j.total_cost_usd) || 0 }, isError: j.is_error === true };
+    } catch { return { text: result.stdout, usage: {} }; }
+  }
+  const m = result.stderr.match(/tokens used\s*\n?\s*([\d,]+)/i);
+  return { text: result.stdout, usage: m ? { tokens: Number(m[1].replace(/,/g, "")) } : {} };
 }
 
 export function detectEngines(env = process.env) {
@@ -111,12 +155,25 @@ export function normalizeBrief(obj) {
   return { coverageNote: String(obj.coverageNote ?? ""), searchesRun: Number.isInteger(obj.searchesRun) ? obj.searchesRun : undefined, findings };
 }
 
+// A model may echo the contract example or print a draft before its answer, which leaves more than
+// one object with a findings key. The last one is the answer.
+export function extractBrief(text) {
+  const direct = extractJson(text, "findings");
+  if (direct) return direct;
+  for (const marker of ['{"coverageNote"', '{"findings"']) {
+    const i = text.lastIndexOf(marker);
+    if (i !== -1) { const o = extractJson(text.slice(i), "findings"); if (o) return o; }
+  }
+  return undefined;
+}
+
 // A CLI that answered with a parseable brief succeeded, whatever its stderr says. Otherwise name
 // the failure, singling out credit/auth problems so the caller can tell "top up" from "broken".
 const AUTH_RE = /\b402\b|\b401\b|\b403\b|\b429\b|balance exhausted|credit balance|quota|usage limit|rate limit|unauthori[sz]ed|not logged in|login required/i;
 export function failureReason(engine, result, brief) {
   if (brief) return undefined;
-  const text = `${result.stdout}\n${result.stderr}`;
+  // Model prose can mention "quota" or "429" legitimately, so stdout counts only when the CLI failed.
+  const text = result.outcome === "error" ? `${result.stdout}\n${result.stderr}` : result.stderr;
   if (result.outcome === "timeout") return `${engine} timed out`;
   if (AUTH_RE.test(text)) return `${engine} auth/credit failure: ${text.match(AUTH_RE)[0]}`;
   if (result.outcome === "error") return `${engine} exited ${result.code ?? "abnormally"}${result.stderr ? `: ${result.stderr.trim().split("\n").at(-1).slice(0, 160)}` : ""}`;
@@ -174,8 +231,9 @@ export function assignJobs(angles, engines, { mode = "rotate", breadth = 1, curs
 // searxng, and a sensitive run without SearXNG is refused rather than silently widened.
 export function resolveEngines(requested, available, { sensitive = false } = {}) {
   const warnings = [];
-  const wanted = requested.includes("all") ? ENGINES : requested;
-  const unknown = wanted.filter((e) => !ENGINES.includes(e));
+  const wanted = requested.includes("all") ? [...new Set([...ALL_ENGINES, ...requested.filter((e) => e !== "all")])] : requested;
+  const nameOf = (e) => parseEngineSpec(e).name;
+  const unknown = wanted.filter((e) => !ENGINES.includes(nameOf(e)));
   if (unknown.length) return { ok: false, error: `unknown engine(s): ${unknown.join(", ")}` };
   if (sensitive) {
     if (!available.has("searxng")) return { ok: false, error: "sensitive topic: only the searxng engine is allowed, and SEARXNG_URL is not set" };
@@ -183,8 +241,10 @@ export function resolveEngines(requested, available, { sensitive = false } = {})
     return { ok: true, engines: ["searxng"], warnings };
   }
   const usable = [...new Set(wanted)].filter((e) => {
-    if (available.has(e)) return true;
-    warnings.push(e === "searxng" ? "searxng skipped: SEARXNG_URL is not set" : `${e} skipped: '${CLI_BIN[e]}' not found on PATH`);
+    const name = nameOf(e);
+    if (name === "searxng" && e !== "searxng") { warnings.push(`${e}: searxng takes no model; using searxng`); return false; }
+    if (available.has(name)) return true;
+    warnings.push(name === "searxng" ? "searxng skipped: SEARXNG_URL is not set" : `${e} skipped: '${CLI_BIN[name]}' not found on PATH`);
     return false;
   });
   if (!usable.length) return { ok: false, error: `none of the requested engines is available (${wanted.join(", ")})` };
@@ -192,38 +252,54 @@ export function resolveEngines(requested, available, { sensitive = false } = {})
 }
 
 // ── run ─────────────────────────────────────────────────────────────────────
-export async function runResearch(plan, { engines, mode = "rotate", breadth = 1, timeoutSec = 600, env = process.env, fetchImpl, cwd } = {}) {
-  const { jobs } = assignJobs(plan.angles, engines, { mode, breadth });
+// Runs fn over items with at most `limit` in flight, keeping result order.
+export async function pool(items, limit, fn) {
+  const out = new Array(items.length);
+  let next = 0;
+  const worker = async () => { while (next < items.length) { const i = next++; out[i] = await fn(items[i], i); } };
+  await Promise.all(Array.from({ length: Math.max(1, Math.min(limit, items.length)) }, worker));
+  return out;
+}
+
+export async function runResearch(plan, { engines, mode = "rotate", breadth = 1, timeoutSec = 600, concurrency = DEFAULT_CONCURRENCY, env = process.env, fetchImpl, cwd } = {}) {
+  // plan.cursor continues a previous run's rotation, so a follow-up wave doesn't restart on engine #0.
+  const { jobs, cursor: nextCursor } = assignJobs(plan.angles, engines, { mode, breadth, cursor: Number.isInteger(plan.cursor) ? plan.cursor : 0 });
   const perEngine = Object.fromEntries(engines.map((e) => [e, { researchers: 0, findings: 0, failed: 0 }]));
-  const briefs = await Promise.all(jobs.map(async (job) => {
+  const briefs = await pool(jobs, concurrency, async (job) => {
     const stats = perEngine[job.engine];
     stats.researchers++;
     const base = { angle: job.angle.label, engine: job.engine, lens: job.lens };
-    let brief, failure, ms;
+    let brief, failure, ms, usage;
     if (job.engine === "searxng") {
-      ({ brief, failure, ms } = await runSearxng(job.angle, { baseUrl: env.SEARXNG_URL, ...(fetchImpl ? { fetchImpl } : {}) }));
+      ({ brief, failure, ms } = await runSearxng(job.angle, { baseUrl: env.SEARXNG_URL, timeoutMs: Math.min(timeoutSec, 120) * 1000, ...(fetchImpl ? { fetchImpl } : {}) }));
     } else {
       // An angle may carry its own lens (the Claude workflow adapter sends one angle per call).
       const lens = job.lens > 0 ? LENSES[job.lens % LENSES.length] : (job.angle.lens ?? "");
       const prompt = researcherPrompt(plan, job.angle, { lens, alreadyCovered: plan.alreadyCovered ?? [] });
-      const b = bindingFor(job.engine, timeoutSec);
+      const spec = parseEngineSpec(job.engine);
+      const b = bindingFor(spec.name, timeoutSec, spec);
       // runSeat pipes brief+contract+packet on stdin. For an "arg" engine the same text also rides
       // as the final argument, which is what the CLI actually reads.
       const seat = { ...b, packetVia: "stdin", argv: b.packetVia === "arg" ? [...b.argv, `${prompt}\n\n${BRIEF_CONTRACT}`] : b.argv, brief: prompt, contract: BRIEF_CONTRACT };
       // Each CLI runs in its own empty directory, never the caller's repo: web research needs no
-      // files, and a prompt injection in a fetched page then has nothing to read or touch.
+      // files, and relative paths from a prompt injection in a fetched page resolve to nothing.
+      // This is not a jail (see the binding notes above).
       const jobDir = cwd ?? mkdtempSync(join(tmpdir(), "research-"));
       const result = await runSeat(seat, "", timeoutSec * 1000, { cwd: jobDir });
       if (!cwd) rmSync(jobDir, { recursive: true, force: true });
       ms = result.ms;
-      brief = normalizeBrief(extractJson(result.stdout, "findings"));
-      failure = failureReason(job.engine, result, brief);
+      const out = readOutput(b, result);
+      usage = out.usage;
+      brief = out.isError ? undefined : normalizeBrief(extractBrief(out.text));
+      failure = failureReason(job.engine, { ...result, stdout: out.text }, brief);
     }
-    if (failure) { stats.failed++; return { ...base, ok: false, failure, ms }; }
+    if (usage?.usd) stats.usd = (stats.usd ?? 0) + usage.usd;
+    if (usage?.tokens) stats.tokens = (stats.tokens ?? 0) + usage.tokens;
+    if (failure) { stats.failed++; return { ...base, ok: false, failure, ms, ...(usage ? { usage } : {}) }; }
     stats.findings += brief.findings.length;
-    return { ...base, ok: true, ms, ...brief };
-  }));
-  return { question: plan.question, engines, mode, breadth, perEngine, briefs };
+    return { ...base, ok: true, ms, ...(usage ? { usage } : {}), ...brief };
+  });
+  return { question: plan.question, engines, mode, breadth, nextCursor, perEngine, briefs };
 }
 
 // ── CLI ─────────────────────────────────────────────────────────────────────
@@ -239,7 +315,7 @@ export function parseArgs(argv) {
     return v;
   };
   const sensitive = flag("--sensitive");
-  const vals = { plan: take("--plan"), engines: take("--engines"), mode: take("--mode"), breadth: take("--breadth"), timeout: take("--timeout") };
+  const vals = { plan: take("--plan"), engines: take("--engines"), mode: take("--mode"), breadth: take("--breadth"), timeout: take("--timeout"), concurrency: take("--concurrency") };
   const missing = Object.entries(vals).find(([, v]) => v === null);
   if (missing) return { ok: false, error: `missing value for --${missing[0]}\n${USAGE}` };
   const [cmd, ...rest] = args;
@@ -251,9 +327,11 @@ export function parseArgs(argv) {
   const breadth = vals.breadth === undefined ? 1 : Number(vals.breadth);
   if (!Number.isInteger(breadth) || breadth < 1 || breadth > LENSES.length) return { ok: false, error: `--breadth must be an integer 1-${LENSES.length}` };
   const timeoutSec = vals.timeout === undefined ? 600 : Number(vals.timeout);
-  if (!Number.isFinite(timeoutSec) || timeoutSec <= 0) return { ok: false, error: "--timeout must be a positive number of seconds" };
+  if (!Number.isFinite(timeoutSec) || timeoutSec <= 0 || timeoutSec > 3600) return { ok: false, error: "--timeout must be 1-3600 seconds" };
+  const concurrency = vals.concurrency === undefined ? DEFAULT_CONCURRENCY : Number(vals.concurrency);
+  if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 32) return { ok: false, error: "--concurrency must be an integer 1-32" };
   const engines = (vals.engines ?? "claude").split(",").map((e) => e.trim().toLowerCase()).filter(Boolean);
-  return { ok: true, value: { cmd, planPath: vals.plan, engines, mode, breadth, timeoutSec, sensitive } };
+  return { ok: true, value: { cmd, planPath: vals.plan, engines, mode, breadth, timeoutSec, concurrency, sensitive } };
 }
 
 export function loadPlan(path) {
@@ -273,13 +351,13 @@ export async function main(argv = process.argv.slice(2), env = process.env) {
     console.log(JSON.stringify({ available: ENGINES.filter((e) => available.has(e)), missing: ENGINES.filter((e) => !available.has(e)) }));
     return 0;
   }
-  const { planPath, engines: requested, mode, breadth, timeoutSec, sensitive: sensitiveFlag } = parsed.value;
+  const { planPath, engines: requested, mode, breadth, timeoutSec, concurrency, sensitive: sensitiveFlag } = parsed.value;
   const loaded = loadPlan(planPath);
   if (!loaded.ok) { console.error(loaded.error); return 2; }
   const plan = { ...loaded.plan, sensitive: sensitiveFlag || loaded.plan.sensitive === true };
   const resolved = resolveEngines(requested, available, { sensitive: plan.sensitive });
   if (!resolved.ok) { console.error(resolved.error); return 2; }
-  const out = await runResearch(plan, { engines: resolved.engines, mode, breadth, timeoutSec, env });
+  const out = await runResearch(plan, { engines: resolved.engines, mode, breadth, timeoutSec, concurrency, env });
   console.log(JSON.stringify({ ...out, warnings: resolved.warnings }, null, 1));
   return out.briefs.some((b) => b.ok) ? 0 : 1;
 }

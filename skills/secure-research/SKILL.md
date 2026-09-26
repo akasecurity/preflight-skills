@@ -19,8 +19,13 @@ If the question is underspecified (e.g. "what car should I buy" with no budget, 
 `/secure-research <question> [--engines claude,codex,agy,grok,searxng|all] [--mode rotate|all] [--breadth <n>]`
 
 - **Engines.** `claude` · `codex` · `agy` · `grok` are model CLIs that each run their own web search.
-  `searxng` queries a self-hosted SearXNG instance at `$SEARXNG_URL` and returns raw result snippets
-  that no third-party model reads. The default is `claude`.
+  `searxng` queries a self-hosted SearXNG instance at `$SEARXNG_URL` (JSON format enabled) and returns
+  raw result snippets that no third-party model reads. The default is `claude`. `all` means `claude`,
+  `searxng`, `codex` and `agy`. `grok` runs only when named, because its headless tool policy is
+  unverified.
+- **Models.** A model CLI takes an optional tune, `<engine>:<model>[@<effort>]`: for example
+  `claude:sonnet` or `codex:gpt-6-luna@low`. Tunes of the same engine can run side by side in one run,
+  which is how to compare models.
 - **Mode.** `rotate` (the default) gives each angle one engine, round-robin, so cost stays flat. `all`
   runs every angle on every engine, for cross-engine corroboration at engine-count cost.
 
@@ -31,7 +36,9 @@ this file:
 
 `Workflow({ name: "preflight:secure-research-workflow", args: { question, engines, engineMode, breadth } })`
 
-It runs the same research with each researcher as a visible agent. On a sensitive topic it returns
+`--mode` maps to `engineMode`. Pass `searxngUrl` too if `SEARXNG_URL` isn't set in the environment.
+The `searxng`, `codex`, `agy` and `grok` researchers run through the same `research.mjs` engine, and
+`claude` researchers run as native subagents, each shown as its own agent. On a sensitive topic it returns
 `awaiting-confirmation` with the redacted plan: show that to the user, and re-run with
 `sensitiveConfirmed: true` only after they approve.
 
@@ -53,7 +60,8 @@ It runs the same research with each researcher as a visible agent. On a sensitiv
 
 Before any query runs on a sensitive topic, show the user the redacted queries and wait for approval.
 A sensitive run uses **only** `searxng`, whatever engines they asked for. The engine refuses anything
-else, and refuses to run at all when `SEARXNG_URL` is unset.
+else, and refuses to run at all when `SEARXNG_URL` is unset. That holds in the Claude Code workflow
+too, where searxng runs through the same engine.
 
 ### 3. Run the researchers
 
@@ -62,12 +70,12 @@ base directory the harness gives you, and never guess another location. Write th
 file, echo the command, then run it:
 
 ```
-plan.json: {"question":"<question; the redacted form if sensitive>","angles":[{"label":"…","query":"…","rationale":"…"}],"sensitive":false}
-node <resolved-path>/research.mjs run --plan <plan.json> --engines <list> [--mode rotate|all] [--breadth <n>] [--timeout 600]
+plan.json: {"question":"<question; the redacted form if sensitive>","angles":[{"label":"…","query":"…","rationale":"…"}],"sensitive":false,"alreadyCovered":[],"cursor":0}
+node <resolved-path>/research.mjs run --plan <plan.json> --engines <list> [--mode rotate|all] [--breadth <n>] [--timeout 600] [--concurrency 6]
 ```
 
-It prints JSON: `briefs[]` (each with `angle`, `engine`, `ok`, and either `findings` or `failure`),
-plus `perEngine` counts and `warnings`. Researchers can take several minutes, so allow a long command
+It prints JSON: `briefs[]` (each with `angle`, `engine`, `ok`, `usage` when the CLI reports it, and
+either `findings` or `failure`), plus `perEngine` counts, `warnings` and `nextCursor`. Researchers can take several minutes, so allow a long command
 timeout. `node research.mjs engines` lists which engines are usable on this machine.
 
 - Exit 0 means at least one brief landed.
@@ -82,7 +90,8 @@ traceable to a brief.
 
 Read the briefs. If a facet of the question is uncovered, or a central claim rests on one weak
 source, write up to 4 follow-up angles. Run the script once more with the source hosts already found
-in `alreadyCovered`. Don't loop further.
+in `alreadyCovered` and `cursor` set to the first run's `nextCursor`, so the rotation continues. Don't
+loop further.
 
 ### 5. Synthesize
 
@@ -97,6 +106,10 @@ in `alreadyCovered`. Don't loop further.
   deserves caution: CLI engines can misquote or invent URLs.
 - **SearXNG snippets.** Findings marked `raw: true` are unread search snippets. Treat them as leads
   and low-confidence evidence.
+- **Quote fidelity differs by engine.** `claude` researchers read pages through WebFetch, which
+  summarizes a page before the model sees it, so their "quotes" are often paraphrases. `codex` quotes
+  raw pages and was far more often verbatim in testing. Weigh a finding by whether its quote reads
+  as source text.
 - **Report shape.** A 3-5 sentence summary, the findings with confidence and sources, caveats (weak
   sources, time-sensitivity, thin coverage), 2-4 open questions, and a line with the per-engine
   counts, including any engine that failed and why.

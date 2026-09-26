@@ -36,7 +36,8 @@ export const meta = {
 //   1. REDACTS: Scope generalizes identifying specifics out of the search queries (full question stays internal).
 //   2. GATES: returns the plan for confirmation BEFORE any external query fires (Scope has no web access).
 //   3. REDUCES: fewer angles AND the follow-up wave is disabled (hard cap on amplification).
-//   4. ROUTES: search + fetch go through self-hosted SearXNG (de-identified vs. upstream engines).
+//   4. ROUTES: search runs only on self-hosted SearXNG through scripts/research.mjs, which returns raw
+//      snippets and refuses to run without SEARXNG_URL (fails closed). No page is fetched.
 // NOTE: this de-identifies, it does not cloak. Upstream engines still see query text, and the model
 // already has the full question. The redaction + reduced amplification do more for privacy than the
 // engine swap alone.
@@ -73,7 +74,7 @@ export const meta = {
 //
 // Search engines (args.engines, array or comma string; 'all' = every engine; default ['claude']):
 //   claude  → a Claude researcher with WebSearch/WebFetch (the original path)
-//   searxng → a Claude researcher with the self-hosted SearXNG MCP tools (mcp__searxng__*)
+//   searxng → scripts/research.mjs against $SEARXNG_URL (or args.searxngUrl): raw snippets, no model reads them
 //   codex   → OpenAI Codex CLI       (`codex --search exec`, read-only sandbox)
 //   grok    → xAI Grok CLI           (`grok -p`, headless JSON)
 //   agy     → Google Antigravity CLI (`agy -p`, sandboxed, headless JSON)
@@ -92,8 +93,14 @@ const ANGLE_CAP = { simple: 2, moderate: 5, complex: 10 }
 const SENSITIVE_ANGLE_CAP = 4
 const MAX_FOLLOWUP_ANGLES = 4   // follow-up wave is bounded and one-shot
 const SHARD_MIN = 60            // auto-shard synthesis above this many gathered findings (single Opus funnel compresses too hard past here)
+// Kept identical to ENGINES / ALL_ENGINES in scripts/research.mjs (tests/workflow.test.mjs checks).
 const ENGINES = ["claude", "searxng", "codex", "grok", "agy"]
-const CLI_ENGINES = ["codex", "grok", "agy"]
+const ALL_ENGINES = ["claude", "searxng", "codex", "agy"]   // "all": grok only when named (unverified tool policy)
+// Engines that run through scripts/research.mjs. searxng is one of them so its raw-snippet,
+// fail-closed semantics are the engine's own, not a prompt's.
+const ENGINE_BACKED = ["searxng", "codex", "grok", "agy"]
+// "<engine>[:<model>[@<effort>]]", e.g. claude:sonnet, codex:gpt-6-luna@low
+const engineName = spec => String(spec).split(":")[0]
 
 // ─── Schemas ───
 const SCOPE_SCHEMA = {
@@ -193,6 +200,7 @@ let harvest = false           // harvest mode: skip the LLM reduce, return dedup
 let engineList = ["claude"]   // search engines researchers run on (see header)
 let engineMode = "rotate"     // "rotate" | "all"
 let unknownEngines = []
+let searxngUrl = null          // SEARXNG_URL for the engine; default: inherit the environment
 let enginePath = null          // scripts/research.mjs override; default: newest installed preflight plugin
 if (typeof args === "string") {
   QUESTION = args.trim()
@@ -200,7 +208,7 @@ if (typeof args === "string") {
   QUESTION = (args.question || "").trim()
   sensitiveConfirmed = !!args.sensitiveConfirmed
   forceMode = args.mode === "normal" || args.mode === "sensitive" ? args.mode : null
-  ovAngles = Number.isFinite(args.maxAngles) ? args.maxAngles : null
+  ovAngles = Number.isFinite(args.maxAngles) ? Math.max(1, Math.min(10, Math.floor(args.maxAngles))) : null
   secondWaveOpt = typeof args.secondWave === "boolean" ? args.secondWave : null
   researchModel = ["haiku", "sonnet", "opus"].includes(args.researchModel) ? args.researchModel : "haiku"
   breadth = Number.isFinite(args.breadth) ? Math.max(1, Math.min(5, Math.floor(args.breadth))) : 1
@@ -209,13 +217,14 @@ if (typeof args === "string") {
   if (args.engines != null) {
     const raw = (Array.isArray(args.engines) ? args.engines : String(args.engines).split(","))
       .map(e => String(e).trim().toLowerCase()).filter(Boolean)
-    const wanted = raw.includes("all") ? ENGINES : raw
-    unknownEngines = wanted.filter(e => !ENGINES.includes(e))
-    const known = [...new Set(wanted.filter(e => ENGINES.includes(e)))]
+    const wanted = raw.includes("all") ? [...new Set([...ALL_ENGINES, ...raw.filter(e => e !== "all")])] : raw
+    unknownEngines = wanted.filter(e => !ENGINES.includes(engineName(e)))
+    const known = [...new Set(wanted.filter(e => ENGINES.includes(engineName(e))))]
     if (known.length) engineList = known
   }
   engineMode = args.engineMode === "all" ? "all" : "rotate"
   enginePath = typeof args.enginePath === "string" && args.enginePath.trim() ? args.enginePath.trim() : null
+  searxngUrl = typeof args.searxngUrl === "string" && /^https?:\/\//.test(args.searxngUrl.trim()) ? args.searxngUrl.trim() : null
 }
 if (unknownEngines.length) {
   return { error: "Unknown engine(s): " + unknownEngines.join(", ") + ". Valid: " + ENGINES.join(", ") + " (or 'all')." }
@@ -255,11 +264,6 @@ if (!scope) {
 
 // ─── Resolve sensitivity (forceMode overrides the classifier) + routing/limits ───
 const SENSITIVE = forceMode ? forceMode === "sensitive" : scope.sensitivity === "sensitive"
-const SEARXNG_TOOLS = {
-  searchHow: "the SearXNG MCP tool `mcp__searxng__searxng_web_search` (self-hosted; load its schema via ToolSearch \"select:mcp__searxng__searxng_web_search\" if needed). Do NOT use WebSearch",
-  fetchHow: "the SearXNG MCP tool `mcp__searxng__web_url_read` (load its schema via ToolSearch \"select:mcp__searxng__web_url_read\" if needed). Do NOT use WebFetch",
-}
-const toolsFor = engine => engine === "searxng" ? SEARXNG_TOOLS : { searchHow: "WebSearch", fetchHow: "WebFetch" }
 
 // Sensitive topics never leave for a third-party CLI provider: the engine list collapses to searxng.
 const requestedEngines = engineList
@@ -296,13 +300,12 @@ if (SENSITIVE && !sensitiveConfirmed) {
     rationale: scope.sensitivityRationale || "",
     redactionNotes: scope.redactionNotes || "",
     plan: {
-      searchEngine: "self-hosted SearXNG (mcp__searxng__searxng_web_search)",
-      fetchTool: "SearXNG mcp__searxng__web_url_read",
+      searchEngine: "self-hosted SearXNG via scripts/research.mjs (SEARXNG_URL or args.searxngUrl; raw snippets, fails closed if unset)",
       angles: activeAngles.map(a => ({ label: a.label, query: a.query })),
       followUpWave: false,
       engines: engineList,
     },
-    note: "Privacy-sensitive topic detected — NO external query has fired yet. Review the redacted queries above. To run: re-invoke with args {question, sensitiveConfirmed: true}. To override the routing (full fan-out via WebSearch/WebFetch or the requested CLI engines): args {question, mode: 'normal'}.",
+    note: "Privacy-sensitive topic detected — NO external query has fired yet. Review the redacted queries above. To run: re-invoke with args {question, sensitiveConfirmed: true}. Overriding with args {question, mode: 'normal'} treats the topic as NOT sensitive: queries are no longer redacted, and the FULL question goes to WebSearch/WebFetch and to every requested CLI engine's provider. Only do that if the classification is wrong.",
   }
 }
 
@@ -329,8 +332,8 @@ const RESEARCHER_PROMPT = (angle, alreadyCovered, lens, engine) =>
     ? "## Already covered by earlier researchers (don't just re-find these — go deeper or elsewhere)\n" + alreadyCovered.map(s => "- " + s).join("\n") + "\n\n"
     : "") +
   "## Method (start wide, then narrow)\n" +
-  "1. Search with " + toolsFor(engine).searchHow + ", starting BROAD, then narrow based on what you see. Short queries first; specific follow-ups after.\n" +
-  "2. Read the most promising sources with " + toolsFor(engine).fetchHow + ". Prefer primary/authoritative sources over SEO content farms.\n" +
+  "1. Search with WebSearch, starting BROAD, then narrow based on what you see. Short queries first; specific follow-ups after.\n" +
+  "2. Read the most promising sources with WebFetch. Prefer primary/authoritative sources over SEO content farms.\n" +
   "3. Make roughly 3-8 tool calls total — scale to the angle. STOP once you have solid coverage; don't chase nonexistent sources or keep going after the angle is answered.\n\n" +
   "## Return\n" +
   "Extract up to 8 FALSIFIABLE findings that bear on the research question. Each finding:\n" +
@@ -347,9 +350,14 @@ const RESEARCHER_PROMPT = (angle, alreadyCovered, lens, engine) =>
 // the engine byte-for-byte. The engine is located in the installed plugin cache, newest version
 // first; args.enginePath overrides that (e.g. a local checkout).
 const PLAN_EOF = "SECURE_RESEARCH_PLAN_END"
+// Single-quote for bash: nothing inside is expanded.
+const shq = v => "'" + String(v).replace(/'/g, "'\\''") + "'"
 const ENGINE_LOCATE = enginePath
-  ? "R=" + JSON.stringify(enginePath)
-  : 'R=$(ls -t "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/*/preflight/*/scripts/research.mjs 2>/dev/null | head -1)'
+  ? "R=" + shq(enginePath)
+  // Only preflight's own marketplaces (the official akasecurity one, or the repo's own when installed
+  // straight from GitHub), and the highest version by version order, not by mtime. nullglob keeps zsh
+  // from aborting on the marketplace that isn't installed; bash has no setopt and skips it.
+  : '{ setopt nullglob; } 2>/dev/null; R=$(for f in "${CLAUDE_CONFIG_DIR:-$HOME/.claude}"/plugins/cache/{akasecurity,preflight}/preflight/*/scripts/research.mjs; do [ -f "$f" ] && printf "%s\\t%s\\n" "$(basename "$(dirname "$(dirname "$f")")")" "$f"; done | sort -V | tail -1 | cut -f2-)'
 const FORWARDER_PROMPT = (engine, angle, alreadyCovered, lens) =>
   "## Engine forwarder — " + engine + " — angle: " + angle.label + "\n\n" +
   "Run ONE research brief through the `" + engine + "` engine and transcribe its answer. You are a pipe, not a researcher: do NOT search the web yourself, and do NOT add, reword or improve findings.\n\n" +
@@ -357,22 +365,24 @@ const FORWARDER_PROMPT = (engine, angle, alreadyCovered, lens) =>
   "1. Run this exactly with the Bash tool and a 600000 ms timeout. The engine does its own web research and can take several minutes. Don't retry a failure.\n" +
   "```bash\n" +
   ENGINE_LOCATE + "\n" +
-  "[ -f \"$R\" ] || { echo \"ENGINE_MISSING: research.mjs not found\"; exit 0; }\n" +
+  "[ -f \"$R\" ] || { echo \"ENGINE_MISSING: research.mjs not found (install the preflight plugin, or pass args.enginePath)\"; exit 0; }\n" +
   "D=$(mktemp -d)\n" +
   "cat > \"$D/plan.json\" <<'" + PLAN_EOF + "'\n" +
   JSON.stringify({ question: QUESTION, angles: [{ label: angle.label, query: angle.query, rationale: angle.rationale || "", lens: lens || "" }], alreadyCovered: alreadyCovered || [] }) + "\n" +
   PLAN_EOF + "\n" +
-  "node \"$R\" run --plan \"$D/plan.json\" --engines " + engine + " --timeout 540; echo \"EXIT=$?\"; rm -rf \"$D\"\n" +
+  (searxngUrl ? "SEARXNG_URL=" + shq(searxngUrl) + " " : "") +
+  "node \"$R\" run --plan \"$D/plan.json\" --engines " + shq(engine) + (SENSITIVE ? " --sensitive" : "") + " --timeout 540; echo \"EXIT=$?\"; rm -rf \"$D\"\n" +
   "```\n" +
-  "2. stdout is JSON. Take `briefs[0]`. If its `ok` is true, copy its coverageNote, searchesRun and every finding's fields verbatim into the structured output, and set angleLabel to `" + angle.label + "`.\n\n" +
+  "2. stdout is JSON. Take `briefs[0]`. If its `ok` is true, copy its coverageNote, searchesRun and every finding's fields verbatim into the structured output, and set angleLabel to `" + angle.label + "`. Findings with `raw: true` are search-engine snippets: copy them as they are.\n\n" +
   "## Failure\n" +
-  "If you see ENGINE_MISSING, `briefs[0].ok` is false, the output has no parseable JSON, or the command errors or times out, return findings: [] and a coverageNote that starts with `ENGINE_FAILED:` followed by a one-line reason (use `briefs[0].failure` when there is one, e.g. `ENGINE_FAILED: grok auth/credit failure: 402`).\n\nStructured output only."
+  "If you see ENGINE_MISSING, `briefs[0].ok` is false, the output has no parseable JSON, or the command errors or times out (on a non-zero EXIT, stderr carries the reason, e.g. SEARXNG_URL not set), return findings: [] and a coverageNote that starts with `ENGINE_FAILED:` followed by a one-line reason (use `briefs[0].failure` when there is one, e.g. `ENGINE_FAILED: grok auth/credit failure: 402`).\n\nStructured output only."
 
 // Engine for researcher #slot of the wave: round-robin across the engine list. The offset carries
 // over between waves so the follow-up wave doesn't restart on engine #0.
 let engineCursor = 0
 const multiEngine = engineList.length > 1
-const engineStats = Object.fromEntries(ENGINES.map(e => [e, { researchers: 0, findings: 0, failed: 0 }]))
+const engineStats = Object.fromEntries(engineList.map(e => [e, { researchers: 0, findings: 0, failed: 0 }]))
+const engineFailures = []   // {engine, angle, reason}: returned, so "top up / log in" reaches the user
 
 // Run a wave of researchers in parallel; each is blind to its siblings (overlap is fine, synthesis merges).
 // perAngle>1 spawns that many researchers per angle, each on a different lens (LENSES), for wider recall.
@@ -387,16 +397,19 @@ const runWave = (angles, alreadyCovered, waveTag, perAngle = 1) => {
     const tag = angle.label + (perAngle > 1 ? "#" + v : "") + (engineList.length > 1 ? "@" + engine : "")
     const lens = LENSES[v % LENSES.length]
     engineStats[engine].researchers++
-    return agent(CLI_ENGINES.includes(engine) ? FORWARDER_PROMPT(engine, angle, alreadyCovered, lens) : RESEARCHER_PROMPT(angle, alreadyCovered, lens, engine), {
+    const backed = ENGINE_BACKED.includes(engineName(engine))
+    const claudeModel = engine.startsWith("claude:") ? engine.slice(7) : researchModel
+    return agent(backed ? FORWARDER_PROMPT(engine, angle, alreadyCovered, lens) : RESEARCHER_PROMPT(angle, alreadyCovered, lens, engine), {
       label: waveTag + ":" + tag,
       phase: "Research",
       schema: BRIEF_SCHEMA,
       // The forwarder only runs a command and copies JSON, so it is always Haiku.
-      model: CLI_ENGINES.includes(engine) ? "haiku" : researchModel,
+      model: backed ? "haiku" : claudeModel,
     }).then(brief => {
-      if (!brief) { engineStats[engine].failed++; return null }
+      if (!brief) { engineStats[engine].failed++; engineFailures.push({ engine, angle: angle.label, reason: "no result from the researcher agent" }); return null }
       if (/^ENGINE_FAILED/.test(brief.coverageNote || "")) {
         engineStats[engine].failed++
+        engineFailures.push({ engine, angle: angle.label, reason: brief.coverageNote.replace(/^ENGINE_FAILED:\s*/, "") })
         log(tag + ": " + brief.coverageNote)
         return null
       }
@@ -407,6 +420,7 @@ const runWave = (angles, alreadyCovered, waveTag, perAngle = 1) => {
       return { ...brief, dispatchedAngle: angle.label, engine }
     }).catch(e => {
       engineStats[engine].failed++
+      engineFailures.push({ engine, angle: angle.label, reason: String(e.message || e) })
       log("researcher failed: " + tag + " — " + (e.message || e))
       return null
     })
@@ -470,7 +484,8 @@ if (secondWaveAllowed && allFindings.length > 0) {
 if (allFindings.length === 0) {
   return {
     question: QUESTION,
-    summary: "No findings extracted. " + briefs.length + " researcher(s) ran but surfaced nothing usable — sources may be sparse, paywalled, or the angles missed.",
+    summary: "No findings extracted. " + briefs.length + " researcher(s) returned a brief" + (engineFailures.length ? " and " + engineFailures.length + " engine run(s) FAILED (see engineFailures: credit, login or configuration problems to fix)" : "") + ". Otherwise sources may be sparse, paywalled, or the angles missed.",
+    engineFailures,
     findings: [],
     sources: [],
     stats: { complexity: scope.complexity, sensitivity: SENSITIVE ? "sensitive" : "normal", researchers: briefs.length, findings: 0, perEngine: Object.fromEntries(engineList.map(e => [e, engineStats[e]])) },
@@ -510,6 +525,7 @@ if (harvest) {
     question: QUESTION,
     mode: "harvest",
     findings: deduped,
+    engineFailures,
     sources: buildSources(),
     stats: {
       complexity: scope.complexity, sensitivity: SENSITIVE ? "sensitive" : "normal",
@@ -617,10 +633,11 @@ if (!report) {
   return {
     question: QUESTION,
     mode: "harvest-fallback",
+    engineFailures,
     summary: "Final assembly failed — returning " + deduped.length + " deduped findings (from " + allFindings.length + " gathered).",
     findings: deduped,
     sources: buildSources(),
-    stats: { complexity: scope.complexity, sensitivity: SENSITIVE ? "sensitive" : "normal", breadth, researchers: briefs.length, findingsGathered: allFindings.length, findingsDeduped: deduped.length, afterSynthesis: 0 },
+    stats: { complexity: scope.complexity, sensitivity: SENSITIVE ? "sensitive" : "normal", breadth, researchers: briefs.length, findingsGathered: allFindings.length, findingsDeduped: deduped.length, afterSynthesis: 0, perEngine: Object.fromEntries(engineList.map(e => [e, engineStats[e]])) },
   }
 }
 
@@ -630,6 +647,7 @@ return {
   question: QUESTION,
   ...report,
   sources,
+  engineFailures,
   stats: {
     complexity: scope.complexity,
     sensitivity: SENSITIVE ? "sensitive" : "normal",

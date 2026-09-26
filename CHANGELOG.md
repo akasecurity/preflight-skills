@@ -12,6 +12,9 @@ versions follow semver.
   wave, and writes a report grounded in quoted sources. Sensitive topics are gated, redacted and kept
   on SearXNG, and the engine refuses other engines for them. Claude Code runs it as the
   `preflight:secure-research-workflow` Workflow, where each researcher shows as its own agent.
+  Engines take a model tune (`claude:sonnet`, `codex:gpt-6-luna@low`) so one run can compare models,
+  and briefs report cost or tokens when the CLI does. `all` leaves out `grok`, whose headless tool
+  policy is unverified.
 
 ## [0.2.2] — 2026-07-20
 

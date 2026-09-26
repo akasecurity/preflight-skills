@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import {
-  assignJobs, resolveEngines, normalizeBrief, failureReason, runSearxng, researcherPrompt, parseArgs, detectEngines, runResearch,
+  assignJobs, resolveEngines, parseEngineSpec, bindingFor, readOutput, normalizeBrief, failureReason, runSearxng, researcherPrompt, parseArgs, detectEngines, runResearch,
 } from "../scripts/research.mjs";
 
 const run = promisify(execFile);
@@ -49,10 +49,10 @@ test("resolveEngines: sensitive collapses to searxng, and refuses without SEARXN
 });
 
 test("resolveEngines: 'all' expands, unavailable engines are skipped with a warning, unknown is an error", () => {
-  const r = resolveEngines(["all"], new Set(["claude", "agy"]));
-  assert.deepEqual(r.engines, ["claude", "agy"]);
-  assert.ok(r.warnings.some((w) => /grok skipped/.test(w)));
+  const r = resolveEngines(["all"], new Set(["claude", "agy", "grok"]));
+  assert.deepEqual(r.engines, ["claude", "agy"], "all leaves out grok, whose tool policy is unverified");
   assert.ok(r.warnings.some((w) => /SEARXNG_URL/.test(w)));
+  assert.deepEqual(resolveEngines(["all", "grok"], new Set(["claude", "grok"])).engines, ["claude", "grok"]);
   assert.equal(resolveEngines(["bing"], new Set()).ok, false);
   assert.equal(resolveEngines(["grok"], new Set(["claude"])).ok, false);
 });
@@ -154,4 +154,28 @@ test("e2e CLI: every engine failing exits 1", async () => {
     run("node", [script, "run", "--plan", planFile(), "--engines", "grok", "--timeout", "20"], { env: stubEnv() }),
     (e) => e.code === 1,
   );
+});
+
+test("engine specs carry a model and effort into the CLI argv", () => {
+  assert.deepEqual(parseEngineSpec("codex:gpt-6-luna@low"), { id: "codex:gpt-6-luna@low", name: "codex", model: "gpt-6-luna", effort: "low" });
+  assert.deepEqual(parseEngineSpec("claude"), { id: "claude", name: "claude", model: "", effort: "" });
+  const codex = bindingFor("codex", 60, parseEngineSpec("codex:gpt-6-luna@low")).argv;
+  assert.ok(codex.includes("model=gpt-6-luna") && codex.includes("model_reasoning_effort=low"));
+  const claude = bindingFor("claude", 60, parseEngineSpec("claude:sonnet")).argv;
+  assert.equal(claude[claude.indexOf("--model") + 1], "sonnet");
+  assert.ok(claude.includes("--strict-mcp-config"));
+  assert.equal(bindingFor("claude", 60).argv[bindingFor("claude", 60).argv.indexOf("--model") + 1], "haiku");
+});
+
+test("resolveEngines keeps tuned specs of the same engine side by side", () => {
+  const r = resolveEngines(["claude:haiku", "claude:sonnet", "codex:gpt-6-luna"], new Set(["claude", "codex"]));
+  assert.deepEqual(r.engines, ["claude:haiku", "claude:sonnet", "codex:gpt-6-luna"]);
+  assert.equal(resolveEngines(["bing:x"], new Set()).ok, false);
+});
+
+test("readOutput: claude JSON yields the answer and its cost; codex stderr yields tokens", () => {
+  const c = readOutput({ output: "claude-json" }, { stdout: JSON.stringify({ result: "{\"findings\":[]}", total_cost_usd: 0.012 }), stderr: "" });
+  assert.deepEqual([c.text, c.usage.usd], ['{"findings":[]}', 0.012]);
+  const x = readOutput({ output: "text" }, { stdout: "answer", stderr: "tokens used\n12,345\n" });
+  assert.deepEqual([x.text, x.usage.tokens], ["answer", 12345]);
 });
