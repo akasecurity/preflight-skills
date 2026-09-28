@@ -573,8 +573,7 @@ const block = rankedFindings.map((f, i) =>
 // the sections (dedup + summary), not extracts from raw. Auto-shards past SHARD_MIN gathered findings.
 const SHARD = synthesisMode === "sharded" || (synthesisMode === "auto" && allFindings.length > SHARD_MIN)
 
-let report
-if (SHARD) {
+const runSharded = async () => {
   // Map: cluster by originating angle, synthesize each section on Sonnet, keeping every distinct finding.
   const byAngle = new Map()
   for (const f of rankedFindings) {
@@ -601,6 +600,7 @@ if (SHARD) {
       { label: "section:" + angle, phase: "Synthesize", schema: SECTION_SCHEMA, model: "sonnet" }
     ).then(s => (s && s.findings.length) ? { section: angle, findings: s.findings } : null)
   ))).filter(Boolean)
+  if (!sections.length) return null
 
   // Reduce: ONE Opus pass over the section outputs (compact; assembly, not extraction), told to preserve breadth.
   const asmBlock = sections.map(s =>
@@ -608,7 +608,7 @@ if (SHARD) {
       "- " + f.claim + " [" + f.confidence + "] (" + (f.sources || []).join(", ") + ")" + (f.evidence ? " — " + f.evidence : "")
     ).join("\n")
   ).join("\n\n")
-  report = await task(
+  return task(
     "## Final assembly: research report\n\n" +
     "**Question:** " + QUESTION + "\n\n" +
     "The findings below are ALREADY grounded and merged within each section. Assemble them into one report.\n\n" +
@@ -620,35 +620,61 @@ if (SHARD) {
     "4. Note caveats (what's uncertain, weak sources, time-sensitivity) and 2-4 open questions.\n\nStructured output only.",
     { label: "assemble", schema: REPORT_SCHEMA }
   )
-} else {
-  report = await task(
-    "## Synthesis: research report\n\n" +
-    "**Question:** " + QUESTION + "\n\n" +
-    rankedFindings.length + " cited findings were gathered by the research wave(s). Synthesize them into a report.\n\n" +
-    "## Findings (each carries its source + supporting quote)\n" + block + "\n\n" +
-    "## Instructions\n" +
-    "1. **Ground everything.** Every finding in your report MUST cite at least one source URL from the list above. If a claim isn't supported by any source's quote here, DROP it — do not add outside knowledge as if it were sourced.\n" +
-    "2. **Merge duplicates.** Findings that say the same thing become one finding with combined sources.\n" +
-    "3. **Group into coherent findings** that directly address the question.\n" +
-    "4. **Assign confidence per finding:** high (multiple independent/primary sources agree), medium (secondary sources, or single good source), low (single blog/forum source, or thin support).\n" +
-    (multiEngine ? "   Findings came from different search engines (Engine: tag). The same claim from two engines counts as independent corroboration. A claim only one engine found, with a source no other engine surfaced, deserves more caution: CLI engines can misquote or invent URLs.\n" : "") +
-    "5. Write a 3-5 sentence executive summary answering the question.\n" +
-    "6. Note caveats: what's uncertain, which sources were weak, what time-sensitivity applies, where coverage was thin.\n" +
-    "7. List 2-4 open questions that surfaced but weren't answered.\n\nStructured output only.",
-    { label: "synthesize", schema: REPORT_SCHEMA }
-  )
+}
+
+const runSingle = () => task(
+  "## Synthesis: research report\n\n" +
+  "**Question:** " + QUESTION + "\n\n" +
+  rankedFindings.length + " cited findings were gathered by the research wave(s). Synthesize them into a report.\n\n" +
+  "## Findings (each carries its source + supporting quote)\n" + block + "\n\n" +
+  "## Instructions\n" +
+  "1. **Ground everything.** Every finding in your report MUST cite at least one source URL from the list above. If a claim isn't supported by any source's quote here, DROP it — do not add outside knowledge as if it were sourced.\n" +
+  "2. **Merge duplicates.** Findings that say the same thing become one finding with combined sources.\n" +
+  "3. **Group into coherent findings** that directly address the question.\n" +
+  "4. **Assign confidence per finding:** high (multiple independent/primary sources agree), medium (secondary sources, or single good source), low (single blog/forum source, or thin support).\n" +
+  (multiEngine ? "   Findings came from different search engines (Engine: tag). The same claim from two engines counts as independent corroboration. A claim only one engine found, with a source no other engine surfaced, deserves more caution: CLI engines can misquote or invent URLs.\n" : "") +
+  "5. Write a 3-5 sentence executive summary answering the question.\n" +
+  "6. Note caveats: what's uncertain, which sources were weak, what time-sensitivity applies, where coverage was thin.\n" +
+  "7. List 2-4 open questions that surfaced but weren't answered.\n\nStructured output only.",
+  { label: "synthesize", schema: REPORT_SCHEMA }
+)
+
+// A null report means the synthesis subagent died after its own retries. A non-null one can still be
+// a stub: a model that gives up after repeated malformed attempts may return schema-valid filler
+// (seen in a real run: summary "Test summary.", one finding "test" citing https://example.com). So a
+// report only counts if it has findings and at least one citation matches a URL the researchers
+// actually gathered. One match, not all: models reformat some URLs, and the prompts already demand
+// grounding; this guard is for reports grounded in nothing.
+const normUrl = u => String(u || "").trim().replace(/\/+$/, "")
+const knownUrls = new Set(allFindings.map(f => normUrl(f.sourceUrl)).filter(Boolean))
+const looksGrounded = rep =>
+  !!rep && Array.isArray(rep.findings) && rep.findings.length > 0 &&
+  rep.findings.some(f => Array.isArray(f.sources) && f.sources.some(u => knownUrls.has(normUrl(u))))
+
+let usedSynthesis = SHARD ? "sharded" : "single"
+let synthCalls = 1
+let report = SHARD ? await runSharded() : await runSingle()
+if (!looksGrounded(report)) {
+  log(report
+    ? "Synthesis returned an ungrounded report (no citation matches a gathered source) — discarding it and retrying once, sharded"
+    : "Synthesis failed — retrying once, sharded")
+  usedSynthesis = "sharded-retry"
+  synthCalls += 1
+  report = await runSharded()
+  if (!looksGrounded(report)) report = null
 }
 
 if (!report) {
-  // Synthesis failed (e.g. the assembly stalled on a very large set). Fall back to a deduped HARVEST
-  // rather than discarding the run or dumping unmerged duplicates. This is the harvest path, reused.
+  // Synthesis failed twice (first attempt, then the sharded retry), e.g. the assembly stalled on a very
+  // large set or kept returning ungrounded filler. Fall back to a deduped HARVEST rather than discarding
+  // the run or dumping unmerged duplicates. This is the harvest path, reused.
   const deduped = dedupeFindings(allFindings)
-  log("Synthesis failed — falling back to deduped harvest: " + allFindings.length + " → " + deduped.length)
+  log("Synthesis failed after the retry — falling back to deduped harvest: " + allFindings.length + " → " + deduped.length)
   return {
     question: QUESTION,
     mode: "harvest-fallback",
     engineFailures,
-    summary: "Final assembly failed — returning " + deduped.length + " deduped findings (from " + allFindings.length + " gathered).",
+    summary: "Synthesis failed twice (first attempt + sharded retry) — returning " + deduped.length + " deduped findings (from " + allFindings.length + " gathered).",
     findings: deduped,
     sources: buildSources(),
     stats: { complexity: scope.complexity, sensitivity: SENSITIVE ? "sensitive" : "normal", breadth, researchers: briefs.length, findingsGathered: allFindings.length, findingsDeduped: deduped.length, afterSynthesis: 0, perEngine: Object.fromEntries(engineList.map(e => [e, engineStats[e]])) },
@@ -667,7 +693,7 @@ return {
     sensitivity: SENSITIVE ? "sensitive" : "normal",
     angles: activeAngles.length,
     breadth,
-    synthesis: SHARD ? "sharded" : "single",
+    synthesis: usedSynthesis,
     researchers: briefs.length,
     engines: engineList,
     engineMode,
@@ -676,7 +702,7 @@ return {
     findingsGathered: allFindings.length,
     sourcesUsed: sources.length,
     findingsReported: report.findings.length,
-    // agent calls: 1 scope + researchers + (gap? 1 : 0) + 1 synth
-    agentCalls: 1 + briefs.length + (gap ? 1 : 0) + 1,
+    // agent calls: 1 scope + researchers + (gap? 1 : 0) + synthesis attempts (2 when retried)
+    agentCalls: 1 + briefs.length + (gap ? 1 : 0) + synthCalls,
   },
 }
