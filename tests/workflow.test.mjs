@@ -12,7 +12,7 @@ const src = readFileSync(join(here, "..", "workflows", "secure-research-workflow
 const AsyncFunction = (async () => {}).constructor;
 const body = new AsyncFunction("args", "agent", "parallel", "phase", "log", src);
 
-async function runWorkflow(args, { sensitivity = "normal", fail = () => false } = {}) {
+async function runWorkflow(args, { sensitivity = "normal", fail = () => false, synth = null } = {}) {
   const calls = [];
   const logs = [];
   const agent = async (prompt, o) => {
@@ -23,7 +23,10 @@ async function runWorkflow(args, { sensitivity = "normal", fail = () => false } 
       if (fail(o.label)) return { angleLabel: "x", findings: [], coverageNote: "ENGINE_FAILED: grok auth/credit failure: 402" };
       return { angleLabel: "x", coverageNote: "ok", findings: [{ claim: `c ${o.label}`, confidence: "high", sourceUrl: `https://e.example/${o.label}`, quote: "q" }] };
     }
-    return { summary: "S", findings: [{ claim: "c", confidence: "high", sources: ["u"], evidence: "e" }], caveats: "" };
+    if (synth) { const r = synth(o.label, prompt); if (r !== undefined) return r; }
+    // A real synthesizer cites what the researchers gathered: take the first gathered URL from the prompt.
+    const cited = (prompt.match(/https:\/\/e\.example\/[^\s)",]+/) || ["u"])[0];
+    return { summary: "S", findings: [{ claim: "c", confidence: "high", sources: [cited], evidence: "e" }], caveats: "" };
   };
   const parallel = (fns) => Promise.all(fns.map((f) => f()));
   const result = await body(args, agent, parallel, () => {}, (m) => logs.push(m));
@@ -124,4 +127,47 @@ test("every subagent prompt starts with the task-isolation guard", async () => {
   const { calls } = await runWorkflow({ question: "q", engines: ["claude", "codex"], enginePath: "/x/r.mjs" });
   assert.ok(calls.length >= 5);
   for (const c of calls) assert.match(c.prompt, /^You are one step of an automated research pipeline\. Your ENTIRE task is the prompt below\./, c.label);
+});
+
+// Synthesis grounding: a schema-valid report that cites nothing the researchers gathered is filler (a real
+// run once returned summary "Test summary." with one finding "test" citing https://example.com).
+const STUB = { summary: "Test summary.", findings: [{ claim: "test", confidence: "high", sources: ["https://example.com"], evidence: "test" }], caveats: "" };
+
+test("grounded first synthesis: no retry", async () => {
+  const { result, calls } = await runWorkflow({ question: "q", enginePath: "/x/r.mjs" });
+  assert.equal(result.stats.synthesis, "single");
+  assert.equal(calls.filter((c) => c.label === "synthesize").length, 1);
+  assert.ok(!calls.some((c) => c.label === "assemble"));
+  assert.ok(result.findings[0].sources[0].startsWith("https://e.example/"));
+});
+
+test("stub synthesis is discarded and retried once, sharded", async () => {
+  const { result, calls, logs } = await runWorkflow({ question: "q", enginePath: "/x/r.mjs" }, { synth: (label) => (label === "synthesize" ? STUB : undefined) });
+  assert.equal(result.stats.synthesis, "sharded-retry");
+  assert.equal(result.summary, "S");
+  assert.ok(calls.some((c) => c.label === "assemble"));
+  assert.ok(logs.some((l) => /ungrounded report/.test(l)));
+});
+
+test("failed (null) synthesis is retried once, sharded", async () => {
+  const { result, logs } = await runWorkflow({ question: "q", enginePath: "/x/r.mjs" }, { synth: (label) => (label === "synthesize" ? null : undefined) });
+  assert.equal(result.stats.synthesis, "sharded-retry");
+  assert.ok(logs.some((l) => /Synthesis failed — retrying once, sharded/.test(l)));
+});
+
+test("ungrounded on both attempts: falls back to the deduped harvest", async () => {
+  const { result, calls } = await runWorkflow({ question: "q", enginePath: "/x/r.mjs" }, { synth: (label) => (label === "synthesize" || label === "assemble" ? STUB : undefined) });
+  assert.equal(result.mode, "harvest-fallback");
+  assert.match(result.summary, /failed twice/);
+  assert.ok(result.findings.length > 0 && result.findings.every((f) => !f.sources || !f.sources.includes("https://example.com")));
+  assert.equal(calls.filter((c) => c.label === "assemble").length, 1);
+});
+
+test("grounding ignores a trailing slash on a cited URL", async () => {
+  const { result } = await runWorkflow({ question: "q", enginePath: "/x/r.mjs" }, {
+    synth: (label, prompt) => label === "synthesize"
+      ? { summary: "S", findings: [{ claim: "c", confidence: "high", sources: [prompt.match(/https:\/\/e\.example\/[^\s)",]+/)[0] + "/"], evidence: "e" }], caveats: "" }
+      : undefined,
+  });
+  assert.equal(result.stats.synthesis, "single");
 });

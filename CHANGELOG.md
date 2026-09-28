@@ -3,6 +3,17 @@
 Notable changes to preflight-skills. Format loosely follows Keep a Changelog;
 versions follow semver.
 
+## [Unreleased]
+
+### Fixed
+- `secure-research-workflow` no longer ships a filler report as the answer. A synthesis model that
+  gives up after repeated malformed attempts can return a report that passes the schema but is
+  grounded in nothing (a real run returned summary "Test summary." and one finding "test" citing
+  `https://example.com`). A report now counts only if at least one citation matches a URL the
+  researchers gathered. An ungrounded or failed first attempt is retried once through the sharded
+  map-reduce; only if that also fails does the run fall back to the deduped harvest, whose summary
+  now says both attempts failed. `stats.synthesis` reads `sharded-retry` when the retry was used.
+
 ## [0.4.0] — 2026-09-28
 
 ### Added
