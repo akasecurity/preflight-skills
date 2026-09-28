@@ -9,16 +9,19 @@
 two blind parallel reads of a diff, design doc, or writing draft by different model families, then an
 independent judge that filters false positives. Report-only — it never merges, fixes, or acts.
 
-> Installed as the `preflight` plugin (skills: `crew-review`, `crew-consult`, `biascheck`, `unbias`, `secure-research`). Repo: `akasecurity/preflight-skills`.
+> Installed as the `preflight` plugin (skills: `crew-review`, `crew-consult`, `biascheck`, `unbias`, `secure-research`, `multiplechoice`). Repo: `akasecurity/preflight-skills`.
 
-Five skills ship: `crew-review` and `crew-consult` review code and design docs; `biascheck` scores a
+Six skills ship: `crew-review` and `crew-consult` review code and design docs; `biascheck` scores a
 writing draft for authenticity with a neutral median scorer (several reads by `gpt-5.6-terra`, median
 reported), report-only and never editing it. `unbias` is the odd one out — a prompt-only skill where
 the session model applies the tells catalog in place, not part of the crew engine. The two de-slop
 skills read different catalogs: `unbias` uses `shared/BIAS.md` (a forgiving self-editing catalog),
 `biascheck` uses `shared/TELLS.md` (a detection-oriented research reference). `secure-research` is
 separate from the review crew: cited web research spread across several search engines (see
-[secure-research](#secure-research) below).
+[secure-research](#secure-research) below). `multiplechoice` is also prompt-only and outside the crew: it turns
+the decisions you need to make, including the calls an agent made on your behalf, into
+multiple-choice questions with the agent's recommendation first (see
+[multiplechoice](#multiplechoice) below).
 
 From [akasecurity](https://akasecurity.io) · MIT · needs `node` · drives `claude` / `codex` / `agy`.
 
@@ -185,6 +188,20 @@ each researcher shows as its own agent and the run can resume. Its searxng, code
 researchers run through `research.mjs` too, so a sensitive run fails closed there when `SEARXNG_URL`
 is unset (or pass `searxngUrl`). Other harnesses follow the steps in
 `skills/secure-research/SKILL.md`.
+
+## multiplechoice
+
+```
+/multiplechoice
+```
+
+Ask for it ("what decisions do I need to make, or were made for me?"), or let the agent reach for
+it when two or more open decisions block the work. It collects the open decisions, the
+consequential calls the agent made without asking, and the choices an experiment could settle.
+Facts are checked before anything is framed, and each decision becomes a question with 2–4 options,
+the recommended option first. Rounds of up to four are asked one at a time. Without a picker tool
+it falls back to a numbered list you answer like `1a 2c`. Prompt-only: no script, no model calls.
+See `skills/multiplechoice/SKILL.md`.
 
 ## Install per harness
 
