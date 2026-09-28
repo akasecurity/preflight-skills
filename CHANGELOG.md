@@ -12,6 +12,15 @@ versions follow semver.
   prose), and choices an experiment could settle, proposed as the experiment. It checks facts before
   framing, quotes the user's own constraints without widening them, and asks rounds of up to four,
   one round per turn. Harnesses without a picker tool get a numbered list answered as `1a 2c`.
+- `experiment`: a prompt-only checklist for settling a question by measurement. It checks earlier
+  results and your own changes first, then runs a controlled, interleaved, repeated test on a real
+  workload with shared systems guarded. Contaminated runs are excluded by timeline, the original
+  config is restored and verified, and the result carries its evidence grade: measured, researched,
+  inferred or inconclusive.
+- `priorart`: a prompt-only checklist for looking before building. It checks the decision log and
+  notes, existing scripts, the components on either side (full config and source), platform
+  facilities and maintained projects. It prefers turning on or fixing what exists and never edits
+  vendored code.
 
 ## [0.3.0] — 2026-09-26
 

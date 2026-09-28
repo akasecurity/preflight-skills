@@ -5,7 +5,7 @@ global layer — never repeats them.
 
 ## What this repo is
 
-The **public, released** multi-model review crew, installed as the `preflight` plugin. Six skills,
+The **public, released** multi-model review crew, installed as the `preflight` plugin. Eight skills,
 four of them over two zero-dependency scripts:
 
 - `crew-review` — blind cross-family review of a git range.
@@ -15,6 +15,8 @@ four of them over two zero-dependency scripts:
 - `secure-research` — cited web research fanned out across search engines by `scripts/research.mjs`.
 - `multiplechoice` — prompt-only: open decisions and calls made for the user, asked as multiple-choice
   rounds with a recommendation.
+- `experiment` — prompt-only: settle a question by a guarded measurement; report the evidence grade.
+- `priorart` — prompt-only: look for what already exists before building something new.
 
 Public and MIT. Everything committed is visible immediately.
 
