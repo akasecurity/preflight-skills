@@ -3,7 +3,7 @@
 Notable changes to preflight-skills. Format loosely follows Keep a Changelog;
 versions follow semver.
 
-## [Unreleased]
+## [0.4.1] — 2026-09-28
 
 ### Fixed
 - `secure-research-workflow` no longer ships a filler report as the answer. A synthesis model that
