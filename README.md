@@ -9,9 +9,9 @@
 two blind parallel reads of a diff, design doc, or writing draft by different model families, then an
 independent judge that filters false positives. Report-only — it never merges, fixes, or acts.
 
-> Installed as the `preflight` plugin (skills: `crew-review`, `crew-consult`, `biascheck`, `unbias`, `secure-research`, `multiplechoice`). Repo: `akasecurity/preflight-skills`.
+> Installed as the `preflight` plugin (skills: `crew-review`, `crew-consult`, `biascheck`, `unbias`, `secure-research`, `multiplechoice`, `experiment`, `priorart`). Repo: `akasecurity/preflight-skills`.
 
-Six skills ship: `crew-review` and `crew-consult` review code and design docs; `biascheck` scores a
+Eight skills ship: `crew-review` and `crew-consult` review code and design docs; `biascheck` scores a
 writing draft for authenticity with a neutral median scorer (several reads by `gpt-5.6-terra`, median
 reported), report-only and never editing it. `unbias` is the odd one out — a prompt-only skill where
 the session model applies the tells catalog in place, not part of the crew engine. The two de-slop
@@ -21,7 +21,9 @@ separate from the review crew: cited web research spread across several search e
 [secure-research](#secure-research) below). `multiplechoice` is also prompt-only and outside the crew: it turns
 the decisions you need to make, including the calls an agent made on your behalf, into
 multiple-choice questions with the agent's recommendation first (see
-[multiplechoice](#multiplechoice) below).
+[multiplechoice](#multiplechoice) below). `experiment` and `priorart` are prompt-only checklists for two
+moments before you commit to something: measuring instead of arguing, and looking for what already
+exists before building it (see [experiment and priorart](#experiment-and-priorart) below).
 
 From [akasecurity](https://akasecurity.io) · MIT · needs `node` · drives `claude` / `codex` / `agy`.
 
@@ -202,6 +204,28 @@ Facts are checked before anything is framed, and each decision becomes a questio
 the recommended option first. Rounds of up to four are asked one at a time. Without a picker tool
 it falls back to a numbered list you answer like `1a 2c`. Prompt-only: no script, no model calls.
 See `skills/multiplechoice/SKILL.md`.
+
+## experiment and priorart
+
+```
+/experiment
+/priorart
+```
+
+Both are prompt-only, and agents reach for them on their own at the right moment.
+
+`experiment` applies when a question could be measured instead of argued: picking a tunable,
+comparing configurations, explaining a slowdown, or writing up benchmark results. It checks earlier
+results and your own recent changes first. It designs a controlled, interleaved, repeated test on a
+real workload and guards shared systems. It excludes contaminated runs by timeline, restores the
+original config, and reports the evidence grade. A thin result comes back as "inconclusive", not a
+verdict.
+
+`priorart` applies before building a script, wrapper, cache, scheduler or integration. It searches the
+project's decision log and notes, existing scripts, the components on either side (full config and
+source), platform facilities, then maintained projects. The preferred order is to turn on or fix what
+exists, extend it through a supported point, adopt a maintained project, and only then build. It
+never edits vendored code.
 
 ## Install per harness
 
