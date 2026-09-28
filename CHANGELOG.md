@@ -3,7 +3,7 @@
 Notable changes to preflight-skills. Format loosely follows Keep a Changelog;
 versions follow semver.
 
-## [Unreleased]
+## [0.4.0] — 2026-09-28
 
 ### Added
 - `multiplechoice`: a prompt-only skill that asks the user for the decisions they need to make, as
