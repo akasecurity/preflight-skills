@@ -3,6 +3,16 @@
 Notable changes to preflight-skills. Format loosely follows Keep a Changelog;
 versions follow semver.
 
+## [Unreleased]
+
+### Added
+- `multiplechoice`: a prompt-only skill that asks the user for the decisions they need to make, as
+  multiple-choice questions with the agent's recommendation first. It covers open decisions, the
+  consequential calls the agent made on the user's behalf (which go to the picker too, not into
+  prose), and choices an experiment could settle, proposed as the experiment. It checks facts before
+  framing, quotes the user's own constraints without widening them, and asks rounds of up to four,
+  one round per turn. Harnesses without a picker tool get a numbered list answered as `1a 2c`.
+
 ## [0.3.0] — 2026-09-26
 
 ### Added

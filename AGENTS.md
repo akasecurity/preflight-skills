@@ -5,14 +5,16 @@ global layer — never repeats them.
 
 ## What this repo is
 
-The **public, released** multi-model review crew, installed as the `preflight` plugin. Five skills
-over two zero-dependency scripts:
+The **public, released** multi-model review crew, installed as the `preflight` plugin. Six skills,
+four of them over two zero-dependency scripts:
 
 - `crew-review` — blind cross-family review of a git range.
 - `crew-consult` — the same pipeline over a design doc.
 - `biascheck` — neutral median authenticity score for a writing draft.
 - `unbias` — prompt-only de-slop the session model applies in place, outside the engine.
 - `secure-research` — cited web research fanned out across search engines by `scripts/research.mjs`.
+- `multiplechoice` — prompt-only: open decisions and calls made for the user, asked as multiple-choice
+  rounds with a recommendation.
 
 Public and MIT. Everything committed is visible immediately.
 

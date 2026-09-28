@@ -1,12 +1,14 @@
 # preflight-skills
 
-Five skills over two scripts:
+Six skills, two of them script-backed engines:
 
 - `skills/crew-review/SKILL.md` — independent multi-model review of a git diff.
 - `skills/crew-consult/SKILL.md` — independent multi-model consult on a design doc.
 - `skills/biascheck/SKILL.md` — neutral median authenticity score for a writing draft.
 - `skills/unbias/SKILL.md` — prompt-only de-slop pass applied in place.
 - `skills/secure-research/SKILL.md` — cited web research spread across search engines.
+- `skills/multiplechoice/SKILL.md` — prompt-only: open decisions and calls made for the user, asked as
+  multiple-choice questions with a recommendation.
 
 The first three run `node scripts/crew.mjs <review|consult|biascheck> …` from the repo being
 reviewed and print a report. They never act on the verdict. `unbias` is the odd one out: no engine
@@ -21,5 +23,9 @@ median score with its spread, scored against `shared/TELLS.md`.
 `claude`, `codex`, `agy` and `grok` CLIs and a self-hosted SearXNG (`$SEARXNG_URL`), then write a
 report in which every claim cites a source a researcher quoted. Sensitive topics are gated, redacted
 and run on SearXNG only.
+
+`multiplechoice` is prompt-only too. It collects open decisions, calls made on the user's behalf,
+and test-decidable choices, then asks them as multiple-choice rounds of up to four, recommendation
+first, one round per turn.
 
 Read the SKILL.md files for the full contract.
