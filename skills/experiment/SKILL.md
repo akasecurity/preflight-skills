@@ -52,11 +52,14 @@ report only what the measurement supports. Every conclusion carries one of three
   - n per arm and the noise floor.
   - The effect size with its spread.
 - **Decide or don't.** If the effect is smaller than the noise, n is below 3, or clean runs
-  disagree, the verdict is **inconclusive**. Say what re-run would settle it, and keep the current
-  setting.
+  disagree, the verdict is **inconclusive**. Say what re-run would settle it. Then fall back to the
+  side that has evidence. Keep a current setting that was chosen on a measured basis. But if the
+  current setting is a guard, check, cap or halt that was added without evidence, an inconclusive
+  result is no reason to keep it: the guard never earned its place, so recommend removing or
+  loosening it, and say that is the basis.
 - **Trade-offs are choices.** When one metric improves and another regresses, put the trade-off to
   the user rather than choosing.
-- **Tunables ship as settings.** Keep a conservative default and record the measured basis next to
-  it.
+- **Tunables ship as settings.** Pick the default the evidence supports, not the most cautious
+  one, and record the measured basis next to it.
 - **The decision log records the evidence grade.** Write measured, inferred, or inconclusive, never
   "resolved" on thin data. When new evidence weakens an old entry, correct the old entry.
