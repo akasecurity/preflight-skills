@@ -3,6 +3,14 @@
 Notable changes to preflight-skills. Format loosely follows Keep a Changelog;
 versions follow semver.
 
+## [Unreleased]
+
+### Changed
+- `experiment` no longer defaults to caution. An inconclusive result still keeps a setting that was
+  chosen on a measured basis, but it no longer keeps a guard, check, cap or halt that was added
+  without evidence: the skill now recommends removing or loosening it and says that is the basis.
+  Tunable defaults follow the evidence instead of the most cautious value.
+
 ## [0.4.1] — 2026-09-28
 
 ### Fixed
