@@ -4,10 +4,10 @@
 // judge that filters false positives. REPORT-ONLY: prints a report, takes no
 // action, writes nothing into the reviewed repo.
 import { fileURLToPath } from "node:url";
-import { accessSync, statSync, constants as fsConstants, mkdtempSync, writeFileSync, readFileSync, appendFileSync, mkdirSync, rmSync, realpathSync } from "node:fs";
+import { accessSync, statSync, constants as fsConstants, readFileSync, appendFileSync, mkdirSync, realpathSync } from "node:fs";
 import { join, resolve, delimiter } from "node:path";
 import { spawn, execFileSync } from "node:child_process";
-import { tmpdir, homedir } from "node:os";
+import { homedir } from "node:os";
 import { createHash } from "node:crypto";
 
 export const USAGE = `usage: crew.mjs review <git-range>  [--item <label>] [--read family[:tune] ...] [--judge family[:model]] [--timeout <sec>]
@@ -48,6 +48,16 @@ export const TELLS_READ_CONTRACT = `Respond with a single JSON object and nothin
 {"score":<0-100 integer, higher = reads more human-authored>,"reasoning":"<your assessment>","findings":[{"ref":"<quoted phrase>","tell":"<the tell>","fix":"<suggested fix>"}]}
 findings is optional and may be empty; do not manufacture tells to fill it.`;
 
+// Headless agy (-p) auto-denies every tool that would need a permission prompt — shell commands
+// and reads outside the workspace — and a denied tool ends the turn with EMPTY stdout (exit 0). The
+// briefs invite repo exploration, which agy reaches for with a shell command, so its seats carry this
+// note. In-workspace file viewing needs no prompt and stays available.
+export const AGY_TOOL_NOTE = `Tool limits for this seat: you run headless, and any tool that needs a permission prompt is
+auto-denied and ends your turn with no output. Do NOT run shell or terminal commands (no git, cat, ls,
+or grep through a shell) and do not read files outside the current workspace. The full packet is
+included below; work from it. For extra repository context, read files inside the current workspace
+with your file-view tool only.`;
+
 export function bindingFor(family, tune, role, timeoutSec) {
   if (family === "claude") {
     const model = tune || (role === "precision" ? "sonnet" : "opus");
@@ -69,8 +79,12 @@ export function bindingFor(family, tune, role, timeoutSec) {
   if (family === "google") {
     const argv = ["agy", "--sandbox", "--print-timeout", `${timeoutSec}s`];
     if (tune) argv.push("--model", tune);
-    argv.push("-p"); // prompt text appended at spawn time (agy takes the prompt as an argument, not stdin)
-    return { family, tune: tune || "default", packetVia: "file", readOnly: "sandbox (terminal restrictions — not strict read-only)", argv };
+    // The whole prompt (brief + contract + packet) is appended as the -p value at spawn time. Headless
+    // agy auto-denies any tool that needs a permission prompt (read_file, run_command) and exits 0 with
+    // empty stdout, so the packet cannot live in a file or arrive on stdin (text-mode print ignores
+    // stdin; the model then tries a shell read and is denied). Inline is the only least-privilege path.
+    argv.push("-p");
+    return { family, tune: tune || "default", packetVia: "arg", toolNote: AGY_TOOL_NOTE, readOnly: "sandbox (terminal restrictions — not strict read-only)", argv };
   }
   return undefined;
 }
@@ -240,31 +254,50 @@ export function reapAllSeats({ kill = process.kill } = {}) {
   liveSeats.clear();
 }
 
-export function runSeat(seat, packetBody, timeoutMs, { cwd = process.cwd(), clock = Date.now } = {}) {
+// Byte ceiling for a prompt passed inline as ONE argv element (packetVia "arg"). Linux caps a single
+// argument at MAX_ARG_STRLEN = 128 KiB; macOS has no per-argument cap but ARG_MAX (1 MiB) covers all
+// argv + the environment together; Windows caps the whole command line at 32K chars. The bound leaves
+// headroom for the environment. Over it, the seat is REFUSED before spawning (outcome "refused",
+// reason on stderr), never truncated, since a silently clipped diff would yield a confident partial
+// review. An E2BIG from spawn itself (a huge environment on top of the prompt) is refused the same way.
+// Trade-off: an inline prompt is visible in the process list to other local users for the seat's
+// lifetime, which the old owner-only temp file was not.
+export function inlinePromptLimit(platform = process.platform) {
+  if (platform === "linux") return 120 * 1024;
+  if (platform === "win32") return 30 * 1024;
+  return 768 * 1024;
+}
+
+export function runSeat(seat, packetBody, timeoutMs, { cwd = process.cwd(), clock = Date.now, argLimit = inlinePromptLimit() } = {}) {
   return new Promise((resolve) => {
     const started = clock();
     let out = "", errText = "", done = false;
     let timer;
-    let packetDir; // set for file-packet seats; removed on success, kept on timeout/error
     let seatChild; // registered in liveSeats while running so any exit path can reap it
     const finish = (outcome, code = null) => {
       if (done) return;
       done = true;
       clearTimeout(timer);
       if (seatChild) liveSeats.delete(seatChild);
-      if (outcome === "ok" && packetDir) { try { rmSync(packetDir, { recursive: true, force: true }); } catch { /* leave the artifact */ } }
       resolve({ outcome, code, ms: clock() - started, stdout: out, stderr: errText });
     };
     try {
       const argv = [...seat.argv];
+      // A seat with a tool note (agy) must not also be invited to explore the repository: agy reaches
+      // for a shell to do that, which is auto-denied and ends its turn.
+      const brief = seat.toolNote ? String(seat.brief).replace(/You may freely explore the repository[\s\S]*?;\s*the packet below is the shared\s+ground truth\./, "Work from the packet below; it is the shared ground truth.") : seat.brief;
+      const prompt = `${brief}${seat.toolNote ? `\n\n${seat.toolNote}` : ""}\n\n${seat.contract}\n\n${packetBody}`;
       let stdinText;
-      if (seat.packetVia === "file") {
-        packetDir = mkdtempSync(join(tmpdir(), "crew-"));
-        const packetPath = join(packetDir, "packet.md");
-        writeFileSync(packetPath, packetBody);
-        argv.push(`${seat.brief}\n\nYour ground-truth packet is the file ${packetPath} — read it fully first, then respond. ${seat.contract}`);
+      if (seat.packetVia === "arg") {
+        const bytes = Buffer.byteLength(prompt, "utf8");
+        if (bytes > argLimit) {
+          errText += `packet too large to pass inline to ${argv[0]} (${bytes} bytes > ${argLimit}-byte argv bound) — narrow the range or file, or use a stdin-capable seat`;
+          finish("refused");
+          return;
+        }
+        argv.push(prompt);
       } else {
-        stdinText = `${seat.brief}\n\n${seat.contract}\n\n${packetBody}`;
+        stdinText = prompt;
       }
 
       const child = spawn(argv[0], argv.slice(1), { cwd, stdio: ["pipe", "pipe", "pipe"], detached: true });
@@ -284,7 +317,13 @@ export function runSeat(seat, packetBody, timeoutMs, { cwd = process.cwd(), cloc
       if (stdinText !== undefined) child.stdin.write(stdinText);
       child.stdin.end();
     } catch (e) {
-      // Never reject: a sync failure (fs error, malformed argv) is an error OUTCOME.
+      // Never reject: a sync failure (fs error, malformed argv) is an error OUTCOME. spawn throws E2BIG
+      // synchronously when argv + environment exceed the OS limit: that is a refusal, like the bound.
+      if (e?.code === "E2BIG") {
+        errText += `argument list too long for the OS (E2BIG) passing the prompt inline to ${seat.argv?.[0]} — narrow the range or file`;
+        finish("refused");
+        return;
+      }
       errText += String(e?.message ?? e);
       finish("error");
     }
@@ -327,6 +366,9 @@ export function median(nums) {
 // after, over packet + verbatim reads. Code gathers; the JUDGE judges; the
 // caller (a human reading the report) acts. Nothing here blocks anything.
 const firstLine = (s) => String(s ?? "").trim().split("\n")[0] ?? "";
+// A CLI that exits 0 with no usable output often says why on stderr (agy's permission auto-deny
+// does) — carry that into the skip reason instead of a bare "no parsable" line.
+const withStderr = (reason, res) => (String(res.stderr ?? "").trim() ? `${reason}: ${firstLine(res.stderr)}` : reason);
 
 export async function runCrew(crew, packet, { cwd, timeoutMs, clock = Date.now } = {}) {
   const calls = [];
@@ -345,9 +387,10 @@ export async function runCrew(crew, packet, { cwd, timeoutMs, clock = Date.now }
     const seat = crew.reads[i];
     const base = { role: seat.role, family: seat.family, tune: seat.tune, ms: res.ms };
     if (res.outcome === "timeout") return { ...base, verdict: "skipped", findings: [], skipReason: `timeout after ${Math.round(res.ms / 1000)}s` };
+    if (res.outcome === "refused") return { ...base, verdict: "skipped", findings: [], skipReason: `not run: ${firstLine(res.stderr)}` };
     if (res.outcome === "error") return { ...base, verdict: "skipped", findings: [], skipReason: `cli error (exit ${res.code}): ${firstLine(res.stderr)}` };
     const parsed = extractJson(res.stdout, "findings");
-    if (!parsed) return { ...base, verdict: "skipped", findings: [], skipReason: "no parsable JSON verdict in output" };
+    if (!parsed) return { ...base, verdict: "skipped", findings: [], skipReason: withStderr("no parsable JSON verdict in output", res) };
     return { ...base, verdict: parsed.verdict === "approve" ? "approve" : "concerns", findings: (Array.isArray(parsed.findings) ? parsed.findings : []).map(normalizeFinding) };
   });
 
@@ -368,7 +411,7 @@ export async function runCrew(crew, packet, { cwd, timeoutMs, clock = Date.now }
     const v = extractJson(jres.stdout, "verdict");
     judge = v
       ? { ok: true, value: { verdict: v.verdict, convergence: v.convergence, rationale: v.rationale, discarded: Array.isArray(v.discarded) ? v.discarded : [], systemic: Array.isArray(v.systemic) ? v.systemic : [] } }
-      : { ok: false, error: "no parsable JSON verdict in judge output" };
+      : { ok: false, error: withStderr("no parsable JSON verdict in judge output", jres) };
   }
   return { reads, judge, calls };
 }
@@ -388,9 +431,10 @@ export async function runBiascheck(seats, packet, { cwd, timeoutMs, clock = Date
   const reads = results.map(({ seat, res }) => {
     const base = { role: seat.role, family: seat.family, tune: seat.tune, ms: res.ms };
     if (res.outcome === "timeout") return { ...base, findings: [], skipReason: `timeout after ${Math.round(res.ms / 1000)}s` };
+    if (res.outcome === "refused") return { ...base, findings: [], skipReason: `not run: ${firstLine(res.stderr)}` };
     if (res.outcome === "error") return { ...base, findings: [], skipReason: `cli error (exit ${res.code}): ${firstLine(res.stderr)}` };
     const parsed = extractJson(res.stdout, "score");
-    if (!parsed || typeof parsed.score !== "number") return { ...base, findings: [], skipReason: "no parsable score in output" };
+    if (!parsed || typeof parsed.score !== "number") return { ...base, findings: [], skipReason: withStderr("no parsable score in output", res) };
     return { ...base, score: parsed.score, reasoning: typeof parsed.reasoning === "string" ? parsed.reasoning : "", findings: (Array.isArray(parsed.findings) ? parsed.findings : []).map(normalizeTell) };
   });
   const scores = reads.filter((r) => typeof r.score === "number").map((r) => r.score);

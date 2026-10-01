@@ -5,8 +5,8 @@
   "plugins": [
     {
       "name": "preflight",
-      "description": "An independent multi-model review crew for coding agents: two blind cross-family reads plus an independent judge — report-only.",
-      "version": "0.2.2",
+      "description": "An independent multi-model review crew for coding agents (two blind cross-family reads plus an independent judge, report-only), plus secure-research: cited web research across several search engines.",
+      "version": "0.4.1",
       "source": "./",
       "author": { "name": "AKA Security" }
     }

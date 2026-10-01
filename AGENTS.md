@@ -5,13 +5,18 @@ global layer — never repeats them.
 
 ## What this repo is
 
-The **public, released** multi-model review crew, installed as the `preflight` plugin. Four skills
-over one zero-dependency script:
+The **public, released** multi-model review crew, installed as the `preflight` plugin. Eight skills,
+four of them over two zero-dependency scripts:
 
 - `crew-review` — blind cross-family review of a git range.
 - `crew-consult` — the same pipeline over a design doc.
 - `biascheck` — neutral median authenticity score for a writing draft.
 - `unbias` — prompt-only de-slop the session model applies in place, outside the engine.
+- `secure-research` — cited web research fanned out across search engines by `scripts/research.mjs`.
+- `multiplechoice` — prompt-only: open decisions and calls made for the user, asked as multiple-choice
+  rounds with a recommendation.
+- `experiment` — prompt-only: settle a question by a guarded measurement; report the evidence grade.
+- `priorart` — prompt-only: look for what already exists before building something new.
 
 Public and MIT. Everything committed is visible immediately.
 
@@ -40,11 +45,18 @@ It went stale once already, describing two skills after four had shipped.
 
 - `scripts/crew.mjs` — the single engine, importable and executable, **only `node:*` imports**.
   Zero dependencies is a hard constraint, not a preference.
+- `scripts/research.mjs` — the secure-research engine. It imports crew.mjs's seat runner and is
+  otherwise `node:*` only as well.
+- `workflows/secure-research-workflow.js` — the Claude Code adapter for `secure-research`, shipped
+  through the Claude plugin's default `workflows/` scan. A Workflow script can't import modules or
+  spawn processes, so its CLI-engine researchers are Haiku forwarders that run `research.mjs`. Keep
+  its `LENSES`, `ENGINES` and `ALL_ENGINES` identical to the engine's; `tests/workflow.test.mjs`
+  checks that.
 - `skills/*/SKILL.md` — the contracts. These are what the model reads.
 - `shared/BIAS.md` — the forgiving self-editing catalog `unbias` applies.
 - `shared/TELLS.md` — the detection-oriented reference `biascheck` scores against. Two different
   catalogs on purpose; don't merge them.
-- `tests/*.test.mjs` — `node --test`. `tests/stubs/` holds fake `claude`/`codex`/`agy` binaries so
+- `tests/*.test.mjs` — `node --test`. `tests/stubs/` holds fake `claude`/`codex`/`agy`/`grok` binaries so
   the suite never dispatches a real model.
 
 ## Release surface
@@ -63,7 +75,7 @@ None of them update on their own.
 No CI or branch protection, so the suite is the only gate. Run it before pushing to `main`:
 
 ```bash
-bun run test        # 104 tests; wraps node --test 'tests/*.test.mjs'
+bun run test        # 137 tests; wraps node --test 'tests/*.test.mjs'
 ```
 
 The glob matters — `node --test tests/` alone picks up the stub binaries in `tests/stubs/` and

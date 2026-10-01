@@ -44,6 +44,14 @@ test("e2e review: cross-family stub crew, report on stdout, exit 0, telemetry ro
   assert.equal(rows.length, 3);
 });
 
+test("e2e review: a google read gets the packet inline via -p and returns a parsed read", async () => {
+  const repo = fixtureRepo();
+  const home = mkdtempSync(join(tmpdir(), "e2ehome-"));
+  const { stdout } = await run("node", [script, "review", "HEAD~1...HEAD", "--read", "google", "--read", "claude"], { cwd: repo, env: env(home) });
+  assert.match(stdout, /READ recall\(google:default\): concerns/);
+  assert.match(stdout, /e2e agy finding/);
+});
+
 test("e2e consult: sha256 anchor, exit 0", async () => {
   const dir = mkdtempSync(join(tmpdir(), "e2edoc-"));
   writeFileSync(join(dir, "d.md"), "# doc\n");

@@ -2,6 +2,13 @@
 let s = "";
 process.stdin.on("data", (d) => (s += d));
 process.stdin.on("end", () => {
+  const all = s + "\n" + process.argv.slice(2).join(" ");
+  if (all.includes("=== RESEARCH BRIEF ===")) {
+    const text = "Here you go:\n" + JSON.stringify({ coverageNote: "e2e claude brief", searchesRun: 2, findings: [{ claim: "e2e claude claim", confidence: "high", sourceUrl: "https://example.com/claude", sourceTitle: "Example", sourceQuality: "primary", quote: "claude quote", importance: "central" }, { claim: "no source", confidence: "high", quote: "q" }] });
+    const json = process.argv.includes("--output-format") && process.argv[process.argv.indexOf("--output-format") + 1] === "json";
+    console.log(json ? JSON.stringify({ type: "result", subtype: "success", is_error: false, result: text, total_cost_usd: 0.0042 }) : text);
+    return;
+  }
   if (s.includes("=== TEXT TO SCORE ===")) {
     console.log(JSON.stringify({ score: 42, reasoning: "e2e claude neutral read", findings: [{ ref: "\"leveraged\"", tell: "vocabulary tell", fix: "use a plain verb" }] }));
   } else if (s.includes("=== REVIEWER READS")) {

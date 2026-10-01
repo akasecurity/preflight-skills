@@ -1,8 +1,8 @@
 {
   "name": "preflight",
   "displayName": "Preflight Skills",
-  "description": "An independent multi-model review crew for coding agents: two blind cross-family reads plus an independent judge — report-only.",
-  "version": "0.2.2",
+  "description": "An independent multi-model review crew for coding agents (two blind cross-family reads plus an independent judge, report-only), plus secure-research: cited web research across several search engines.",
+  "version": "0.4.1",
   "author": { "name": "AKA Security" },
   "homepage": "https://akasecurity.io",
   "repository": "https://github.com/akasecurity/preflight-skills",
