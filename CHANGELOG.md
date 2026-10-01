@@ -6,6 +6,14 @@ versions follow semver.
 ## [Unreleased]
 
 ### Changed
+- Capability tiers are named `fast` / `balanced` / `extra` (older `cheap` / `standard` / `most-capable`
+  stay accepted as aliases). claude tiers resolve to the CLI aliases `haiku` / `sonnet` / `opus`; an
+  explicit `claude:<model>` passes through. No tier, alias or description selects any other model.
+- No code default names an OpenAI model id. The dispatching agent picks the model and effort from
+  `codex debug models` and passes `openai:<model>@<effort>` (or `codex:<model>@<effort>` for research);
+  an omitted half leaves the Codex CLI's own default. `secure-research` `auto` is now bare `codex`
+  (with a run warning) when codex is installed, else `claude:haiku`. This package has no user config
+  file, so there is no `autoCodex` setting.
 - `experiment` no longer defaults to caution. An inconclusive result still keeps a setting that was
   chosen on a measured basis, but it no longer keeps a guard, check, cap or halt that was added
   without evidence: the skill now recommends removing or loosening it and says that is the basis.

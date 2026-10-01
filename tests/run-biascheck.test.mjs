@@ -5,7 +5,7 @@ import { runBiascheck } from "../scripts/crew.mjs";
 // Stub seat: a node one-liner that prints canned JSON (ignores stdin).
 function stubSeat(role, reply) {
   const js = `process.stdin.resume();process.stdin.on("end",()=>console.log(${JSON.stringify(reply)}));`;
-  return { role, family: "openai", tune: "gpt-5.6-terra@medium", brief: "b", contract: "c", packetVia: "stdin", readOnly: "stub", argv: ["node", "-e", js] };
+  return { role, family: "openai", tune: "some-model@medium", brief: "b", contract: "c", packetVia: "stdin", readOnly: "stub", argv: ["node", "-e", js] };
 }
 const packet = { kind: "biascheck", item: "t", anchor: "sha256:abc", body: "BODY" };
 

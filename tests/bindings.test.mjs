@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { bindingFor, FAMILIES, AGY_TOOL_NOTE } from "../scripts/crew.mjs";
+import { bindingFor, normalizeOpenaiTune, FAMILIES, AGY_TOOL_NOTE } from "../scripts/crew.mjs";
 
 test("claude binding: read-only tools, stdin packet, role-default models", () => {
   const recall = bindingFor("claude", undefined, "recall", 600);
@@ -10,29 +10,36 @@ test("claude binding: read-only tools, stdin packet, role-default models", () =>
   assert.equal(bindingFor("claude", "haiku", "recall", 600).tune, "haiku");
 });
 
-test("openai binding: default read seat pins gpt-5.6-terra at medium effort", () => {
-  const b = bindingFor("openai", undefined, "precision", 600);
-  assert.deepEqual(b.argv, ["codex", "exec", "--skip-git-repo-check", "--sandbox", "read-only", "-c", "model=gpt-5.6-terra", "-c", "model_reasoning_effort=medium", "-"]);
-  assert.equal(b.tune, "gpt-5.6-terra@medium");
-  assert.equal(b.packetVia, "stdin");
+test("openai binding: with no tune neither model nor effort is named (the Codex CLI default applies)", () => {
+  for (const role of ["recall", "precision", "read", "judge"]) {
+    const b = bindingFor("openai", undefined, role, 600);
+    assert.deepEqual(b.argv, ["codex", "exec", "--skip-git-repo-check", "--sandbox", "read-only", "-"]);
+    assert.equal(b.tune, "default@default");
+    assert.equal(b.packetVia, "stdin");
+  }
 });
 
-test("openai binding: default judge seat pins gpt-5.6-sol at low effort", () => {
-  const b = bindingFor("openai", undefined, "judge", 600);
-  assert.deepEqual(b.argv, ["codex", "exec", "--skip-git-repo-check", "--sandbox", "read-only", "-c", "model=gpt-5.6-sol", "-c", "model_reasoning_effort=low", "-"]);
-  assert.equal(b.tune, "gpt-5.6-sol@low");
-});
-
-test("openai binding: explicit effort tune overrides default effort, keeps default model", () => {
+test("openai binding: an effort-only tune sets only the effort", () => {
   const b = bindingFor("openai", "high", "precision", 600);
-  assert.deepEqual(b.argv, ["codex", "exec", "--skip-git-repo-check", "--sandbox", "read-only", "-c", "model=gpt-5.6-terra", "-c", "model_reasoning_effort=high", "-"]);
-  assert.equal(b.tune, "gpt-5.6-terra@high");
+  assert.deepEqual(b.argv, ["codex", "exec", "--skip-git-repo-check", "--sandbox", "read-only", "-c", "model_reasoning_effort=high", "-"]);
+  assert.equal(b.tune, "default@high");
 });
 
-test("openai binding: effort:model tune overrides both", () => {
-  const b = bindingFor("openai", "high:gpt-6-preview", "precision", 600);
-  assert.deepEqual(b.argv, ["codex", "exec", "--skip-git-repo-check", "--sandbox", "read-only", "-c", "model=gpt-6-preview", "-c", "model_reasoning_effort=high", "-"]);
-  assert.equal(b.tune, "gpt-6-preview@high");
+test("openai binding: model@effort and legacy effort:model both pass through, unvalidated", () => {
+  for (const tune of ["some-model@high", "high:some-model"]) {
+    const b = bindingFor("openai", tune, "precision", 600);
+    assert.deepEqual(b.argv, ["codex", "exec", "--skip-git-repo-check", "--sandbox", "read-only", "-c", "model=some-model", "-c", "model_reasoning_effort=high", "-"]);
+    assert.equal(b.tune, "some-model@high");
+  }
+  assert.equal(normalizeOpenaiTune("unknown-slug@whatever").tune, "unknown-slug@whatever");
+  assert.equal(normalizeOpenaiTune(normalizeOpenaiTune("m@e").tune).tune, "m@e", "idempotent on its display form");
+  assert.equal(normalizeOpenaiTune("default@medium").model, "");
+});
+
+test("claude binding: tier names and the old aliases resolve to the CLI alias; an explicit model passes through", () => {
+  const model = (tune) => { const a = bindingFor("claude", tune, "read", 600).argv; return a[a.indexOf("--model") + 1]; };
+  assert.deepEqual(["fast", "balanced", "extra", "cheap", "standard", "most-capable"].map(model), ["haiku", "sonnet", "opus", "haiku", "sonnet", "opus"]);
+  assert.equal(model("some-explicit-model"), "some-explicit-model");
 });
 
 test("google binding: agy sandbox, print-timeout matches seat, packet inline as the -p value", () => {

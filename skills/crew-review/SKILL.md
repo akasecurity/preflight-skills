@@ -30,6 +30,10 @@ Echo the exact command, then run it from the current repo root:
 Families: `claude` · `openai` (codex CLI) · `google` (agy CLI). With no flags the script detects
 installed CLIs and prefers a cross-family crew automatically.
 
+Tiers are `fast` / `balanced` / `extra` (aliases `cheap` / `standard` / `most-capable`); reviewers get
+`balanced` at minimum. For codex, read `codex debug models`, choose a model and effort by capability,
+and pass `--read openai:<model>@<effort>`; never copy a model id from a table or an old session.
+
 ## After it finishes
 
 - Surface compactly: the anchor, the CREW composition line, each read's verdict and findings, and

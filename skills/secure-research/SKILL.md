@@ -22,11 +22,11 @@ If the question is underspecified (e.g. "what car should I buy" with no budget, 
   `searxng` queries a self-hosted SearXNG instance at `$SEARXNG_URL` (JSON format enabled), downloads
   the top result pages directly from this machine, and returns verbatim page excerpts (snippets where
   a page can't be fetched) that no third-party model reads. The default, `auto`, is
-  `codex:gpt-6-luna@low` when codex is installed, else `claude:haiku`. `all` means `claude`,
+  bare `codex` when codex is installed, else `claude:haiku`. As the dispatching agent, pick a fast-tier model and effort from `codex debug models` and pass `codex:<model>@<effort>`; never copy a model id from an old session. `all` means `claude`,
   `searxng`, `codex` and `agy`. `grok` runs only when named, because its headless tool policy is
   unverified.
 - **Models.** A model CLI takes an optional tune, `<engine>:<model>[@<effort>]`: for example
-  `claude:sonnet` or `codex:gpt-6-luna@low`. Tunes of the same engine can run side by side in one run,
+  `claude:sonnet` or `codex:<model>@<effort>`. Tunes of the same engine can run side by side in one run,
   which is how to compare models.
 - **Mode.** `rotate` (the default) gives each angle one engine, round-robin, so cost stays flat. `all`
   runs every angle on every engine, for cross-engine corroboration at engine-count cost.

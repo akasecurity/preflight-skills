@@ -74,8 +74,7 @@ export const meta = {
 //   Workflow({name:'preflight:secure-research-workflow', args:{question:'...', engines:'all', engineMode:'all'}})    // every angle on every engine (cross-engine corroboration)
 //
 // Search engines (args.engines, array or comma string; default ['auto']):
-//   auto    → scripts/research.mjs picks codex:gpt-6-luna@low when codex is installed, else claude:haiku.
-//             Measured best on quote fidelity, speed and cost (see the README's comparison).
+//   auto    → scripts/research.mjs picks bare codex when it is installed (the Codex CLI's own default model), else claude:haiku.
 //   all     → claude, searxng, codex, agy (grok only when named)
 //   claude  → a Claude researcher with WebSearch/WebFetch (the original path)
 //   searxng → scripts/research.mjs against $SEARXNG_URL (or args.searxngUrl): fetches the top result pages
@@ -104,7 +103,7 @@ const ALL_ENGINES = ["claude", "searxng", "codex", "agy"]   // "all": grok only 
 // Engines that run through scripts/research.mjs. searxng is one of them so its raw-snippet,
 // fail-closed semantics are the engine's own, not a prompt's.
 const ENGINE_BACKED = ["auto", "searxng", "codex", "grok", "agy"]
-// "<engine>[:<model>[@<effort>]]", e.g. claude:sonnet, codex:gpt-6-luna@low
+// "<engine>[:<model>[@<effort>]]", e.g. claude:sonnet, codex:<model>@<effort>
 const engineName = spec => String(spec).split(":")[0]
 
 // ─── Schemas ───

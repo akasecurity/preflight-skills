@@ -7,8 +7,8 @@ description: Use when the user wants an independent authenticity check of a piec
 
 ## Overview
 
-An independent authenticity check of a draft: several neutral reads by one frontier model
-(gpt-5.6-terra) score it 0-100 against a corpus-research reference and the median is reported with the
+An independent authenticity check of a draft: several neutral reads by one model
+(balanced tier) score it 0-100 against a corpus-research reference and the median is reported with the
 grounded tells. Report-only. Run the one script; do NOT perform the review by hand.
 
 ## Usage
@@ -26,7 +26,7 @@ Echo the exact command, then run it from the current repo root:
 
 `node <resolved-path>/crew.mjs biascheck <file> [flags…]`
 
-With no flags it runs 3 reads of gpt-5.6-terra at medium effort (codex CLI) and reports the median
+With no flags it runs 3 reads on the codex CLI and reports the median
 authenticity score. `--reads` raises the read count for a steadier number on borderline drafts.
 
 ## After it finishes
