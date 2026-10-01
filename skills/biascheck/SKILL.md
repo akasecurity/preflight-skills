@@ -8,7 +8,7 @@ description: Use when the user wants an independent authenticity check of a piec
 ## Overview
 
 An independent authenticity check of a draft: several neutral reads by one model
-(balanced tier) score it 0-100 against a corpus-research reference and the median is reported with the
+(the balanced tier, which the dispatching agent maps to a model and effort) score it 0-100 against a corpus-research reference and the median is reported with the
 grounded tells. Report-only. Run the one script; do NOT perform the review by hand.
 
 ## Usage

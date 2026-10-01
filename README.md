@@ -120,8 +120,10 @@ seconds per seat.
 (integration and judgment), `extra` (architecture, design and the final review, on the top rung of
 this ladder). The older names `cheap` / `standard` / `most-capable` still work as aliases. For
 `claude`, a tier name resolves to the CLI's own alias (`haiku` / `sonnet` / `opus`), and an explicit
-model such as `claude:<model>` passes through unchanged. Reads default to `balanced` at minimum, and
-the claude recall read and judge default to `extra`.
+model such as `claude:<model>` passes through unchanged. Claude reads default to `balanced` at minimum,
+and the claude recall read and judge default to `extra`. For Codex the dispatching agent states the model
+and effort it picked from `codex debug models`; a blank half leaves the Codex CLI's own default, so no tier
+floor is enforced by the scripts.
 
 For `openai`, no model id lives in the code. The agent that dispatches a codex seat reads the live
 list (`codex debug models`), picks a model by capability for the tier, and passes
@@ -168,7 +170,7 @@ work; its Codex row ran a fast-tier model at low effort:
 |---|---|---|---|
 | `claude:haiku` | 48% | 53 s | $0.62 |
 | `claude:sonnet` | 67% | 55 s | $0.75 |
-| `codex:<fast-tier model>@low` | 95% | 34 s | subscription |
+| `codex:gpt-6-luna@low` (measured before the tier work; the fast tier, with the model picked from the live list) | 95% | 34 s | subscription |
 
 Claude researchers read pages through WebFetch, which summarizes a page first, so their quotes are
 often paraphrases. The Codex researcher drew on fewer distinct sites, so mixing engines still adds breadth.
