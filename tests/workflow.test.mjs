@@ -38,7 +38,7 @@ test("workflow lenses match the engine's, so a lens means the same on both paths
   assert.deepEqual(new Function(`return ${m[1]}`)(), ENGINE_LENSES);
 });
 
-test("default run: auto, through the engine (codex luna if installed, else claude haiku)", async () => {
+test("default run: auto, through the engine (codex if installed, else claude haiku)", async () => {
   const { research, result } = await runWorkflow({ question: "q", enginePath: "/x/r.mjs" });
   assert.equal(research.length, 3);
   assert.ok(research.every((c) => /--engines 'auto'/.test(c.prompt)));
@@ -71,9 +71,9 @@ test("rotate over all engines: searxng and CLI engines go through research.mjs w
 });
 
 test("tuned engines: claude:sonnet sets the native researcher model, codex:<model> passes through quoted", async () => {
-  const { research } = await runWorkflow({ question: "q", engines: ["claude:sonnet", "codex:gpt-6-luna@low"], enginePath: "/x/r.mjs" });
+  const { research } = await runWorkflow({ question: "q", engines: ["claude:sonnet", "codex:some-model@low"], enginePath: "/x/r.mjs" });
   assert.equal(research[0].model, "sonnet");
-  assert.match(research[1].prompt, /--engines 'codex:gpt-6-luna@low'/);
+  assert.match(research[1].prompt, /--engines 'codex:some-model@low'/);
 });
 
 test("enginePath and searxngUrl are single-quoted, so the shell expands nothing in them", async () => {

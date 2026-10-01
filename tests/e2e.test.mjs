@@ -35,7 +35,7 @@ test("e2e review: cross-family stub crew, report on stdout, exit 0, telemetry ro
   const home = mkdtempSync(join(tmpdir(), "e2ehome-"));
   const { stdout } = await run("node", [script, "review", "HEAD~1...HEAD"], { cwd: repo, env: env(home) });
   assert.match(stdout, /^ANCHOR \(review\): [0-9a-f]{40}/);
-  assert.match(stdout, /CREW: recall=claude:opus precision=openai:gpt-5\.6-terra@medium judge=claude:opus/);
+  assert.match(stdout, /CREW: recall=claude:opus precision=openai:default@default judge=claude:opus/);
   assert.match(stdout, /e2e stub finding/);
   assert.match(stdout, /e2e codex finding/);
   assert.match(stdout, /JUDGE: approve \(converged\) — e2e stub judge/);
@@ -66,7 +66,7 @@ test("e2e biascheck: median authenticity score on stdout, exit 0", async () => {
   const home = mkdtempSync(join(tmpdir(), "e2ehome-"));
   const { stdout } = await run("node", [script, "biascheck", "post.md", "--reads", "3"], { cwd: dir, env: env(home) });
   assert.match(stdout, /^ANCHOR \(biascheck\): sha256:[0-9a-f]{64}/m);
-  assert.match(stdout, /READS: 3 × openai:gpt-5\.6-terra@medium/);
+  assert.match(stdout, /READS: 3 × openai:default@default/);
   assert.match(stdout, /AUTHENTICITY: \d+\/100 \(median of 3/);
   assert.match(stdout, /NOTE: reference sha256:[0-9a-f]{64}/);
   assert.match(stdout, /\[tell\] "comprehensive": vocabulary tell/);

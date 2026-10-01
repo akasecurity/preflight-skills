@@ -58,22 +58,56 @@ or grep through a shell) and do not read files outside the current workspace. Th
 included below; work from it. For extra repository context, read files inside the current workspace
 with your file-view tool only.`;
 
+// ── capability tiers ────────────────────────────────────────────────────────
+// A role states a TIER (fast / balanced / extra); the DISPATCHING AGENT resolves it against what the
+// installed CLI offers. claude: the CLI's own alias ladder (the CLI maps each alias to its latest
+// model). codex: NOT resolved here — no model id is named anywhere in this repo's code; the agent reads
+// the live list (`codex debug models`) and passes family:model@effort, and codex's own error on an
+// unknown slug is the only validation. An omitted half leaves the Codex CLI's own default.
+export const TIERS = ["fast", "balanced", "extra"];
+export const TIER_ALIASES = { cheap: "fast", standard: "balanced", "most-capable": "extra" };
+export const TIER_DESCRIPTIONS = {
+  fast: "mechanical implementation (isolated functions, clear specs, 1-2 files)",
+  balanced: "integration and judgment (multi-file coordination, pattern matching, debugging)",
+  extra: "architecture, design and the final review, on the top rung of this ladder",
+};
+export const CLAUDE_TIER_ALIAS = { fast: "haiku", balanced: "sonnet", extra: "opus" };
+export const CLAUDE_ROLE_TIER = { recall: "extra", precision: "balanced", judge: "extra" };
+
+export function canonicalTier(name) {
+  if (TIERS.includes(name)) return name;
+  return Object.hasOwn(TIER_ALIASES, name ?? "") ? TIER_ALIASES[name] : undefined;
+}
+
+// The openai tune grammar: "model@effort" (also the display form), "effort:model" (legacy), or a bare
+// "effort". Either half may be blank or "default"; a blank half passes no flag, so the codex CLI's own
+// setting applies. Idempotent on its own display form.
+export const UNSET = "default";
+export function normalizeOpenaiTune(tune) {
+  let effortPart, modelPart;
+  if (typeof tune === "string" && tune.includes("@")) [modelPart, effortPart] = tune.split("@");
+  else [effortPart, modelPart] = (tune ?? "").split(":");
+  const effort = effortPart && effortPart !== UNSET ? effortPart : "";
+  const model = modelPart && modelPart !== UNSET ? modelPart : "";
+  return { model, effort, tune: `${model || UNSET}@${effort || UNSET}` };
+}
+
 export function bindingFor(family, tune, role, timeoutSec) {
   if (family === "claude") {
-    const model = tune || (role === "precision" ? "sonnet" : "opus");
+    // A tier name resolves to the CLI alias; anything else is an explicit model, passed through.
+    const tier = canonicalTier(tune) ?? (tune ? undefined : CLAUDE_ROLE_TIER[role] ?? "extra");
+    const model = tier ? CLAUDE_TIER_ALIAS[tier] : tune;
     return {
       family, tune: model, packetVia: "stdin", readOnly: "allowed-tools (Read/Grep/Glob)",
       argv: ["claude", "-p", "--model", model, "--allowedTools", "Read", "Grep", "Glob"],
     };
   }
   if (family === "openai") {
-    // tune is "effort" or "effort:model" — either half may be blank to take its role default.
-    const [effortPart, modelPart] = (tune ?? "").split(":");
-    const effort = effortPart || (role === "judge" ? "low" : "medium");
-    const model = modelPart || (role === "judge" ? "gpt-5.6-sol" : "gpt-5.6-terra");
+    // No code default names a model or an effort: the dispatching agent passes them (see the tier note above).
+    const { model, effort, tune: shown } = normalizeOpenaiTune(tune);
     return {
-      family, tune: `${model}@${effort}`, packetVia: "stdin", readOnly: "sandbox read-only",
-      argv: ["codex", "exec", "--skip-git-repo-check", "--sandbox", "read-only", "-c", `model=${model}`, "-c", `model_reasoning_effort=${effort}`, "-"],
+      family, tune: shown, packetVia: "stdin", readOnly: "sandbox read-only",
+      argv: ["codex", "exec", "--skip-git-repo-check", "--sandbox", "read-only", ...(model ? ["-c", `model=${model}`] : []), ...(effort ? ["-c", `model_reasoning_effort=${effort}`] : []), "-"],
     };
   }
   if (family === "google") {
@@ -153,7 +187,7 @@ export function chooseCrew(available, { readSpecs = [], judgeSpec, timeoutSec = 
     if (r.error) return { ok: false, exit: 1, error: r.error };
     judge = r.seat;
   } else if (available.has("claude")) {
-    judge = mkSeat("judge", "claude", "opus", "--judge").seat;
+    judge = mkSeat("judge", "claude", "extra", "--judge").seat;
   } else {
     // available is non-empty here — both selection paths above returned earlier otherwise.
     const f = FAMILY_ORDER.find((x) => available.has(x));
@@ -169,14 +203,14 @@ export function chooseCrew(available, { readSpecs = [], judgeSpec, timeoutSec = 
   return { ok: true, value: { reads, judge, sameFamily: new Set(reads.map((s) => s.family)).size === 1, judgeFallback, warnings } };
 }
 
-// biascheck selection: N identical neutral reads of ONE model (default openai → gpt-5.6-terra@medium).
+// biascheck selection: N identical neutral reads of ONE model (default: openai, with the model and effort the dispatching agent passes, else the Codex CLI default).
 // No cross-family panel, no judge. A single --read spec overrides the model for all N.
 export function chooseReads(available, { readSpec, reads = 3, timeoutSec = 600 } = {}) {
   const spec = readSpec ? parseSpec(readSpec) : { family: "openai", tune: undefined };
   const b = bindingFor(spec.family, spec.tune, "read", timeoutSec);
   if (!b) return { ok: false, exit: 1, error: `unsupported --read family '${spec.family}' — families: ${FAMILY_ORDER.join(" · ")}` };
   if (!available.has(spec.family)) {
-    return { ok: false, exit: 1, error: `biascheck's default scorer is openai gpt-5.6-terra; the '${FAMILIES[spec.family]}' CLI is not on PATH — install it or pass --read <family>` };
+    return { ok: false, exit: 1, error: `biascheck's default scorer is the openai family; the '${FAMILIES[spec.family]}' CLI is not on PATH — install it or pass --read <family>` };
   }
   const seats = Array.from({ length: reads }, (_, i) => ({ role: `read${i + 1}`, brief: TELLS_READ_BRIEF, contract: TELLS_READ_CONTRACT, ...b }));
   return { ok: true, value: { seats, model: `${spec.family}:${b.tune}`, reads } };

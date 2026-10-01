@@ -180,10 +180,10 @@ test("e2e CLI: every engine failing exits 1", async () => {
 });
 
 test("engine specs carry a model and effort into the CLI argv", () => {
-  assert.deepEqual(parseEngineSpec("codex:gpt-6-luna@low"), { id: "codex:gpt-6-luna@low", name: "codex", model: "gpt-6-luna", effort: "low" });
+  assert.deepEqual(parseEngineSpec("codex:some-model@low"), { id: "codex:some-model@low", name: "codex", model: "some-model", effort: "low" });
   assert.deepEqual(parseEngineSpec("claude"), { id: "claude", name: "claude", model: "", effort: "" });
-  const codex = bindingFor("codex", 60, parseEngineSpec("codex:gpt-6-luna@low")).argv;
-  assert.ok(codex.includes("model=gpt-6-luna") && codex.includes("model_reasoning_effort=low"));
+  const codex = bindingFor("codex", 60, parseEngineSpec("codex:some-model@low")).argv;
+  assert.ok(codex.includes("model=some-model") && codex.includes("model_reasoning_effort=low"));
   const claude = bindingFor("claude", 60, parseEngineSpec("claude:sonnet")).argv;
   assert.equal(claude[claude.indexOf("--model") + 1], "sonnet");
   assert.ok(claude.includes("--strict-mcp-config"), "no MCP servers in a web-reading researcher");
@@ -192,8 +192,8 @@ test("engine specs carry a model and effort into the CLI argv", () => {
 });
 
 test("resolveEngines keeps tuned specs of the same engine side by side", () => {
-  const r = resolveEngines(["claude:haiku", "claude:sonnet", "codex:gpt-6-luna"], new Set(["claude", "codex"]));
-  assert.deepEqual(r.engines, ["claude:haiku", "claude:sonnet", "codex:gpt-6-luna"]);
+  const r = resolveEngines(["claude:haiku", "claude:sonnet", "codex:some-model"], new Set(["claude", "codex"]));
+  assert.deepEqual(r.engines, ["claude:haiku", "claude:sonnet", "codex:some-model"]);
   assert.equal(resolveEngines(["bing:x"], new Set()).ok, false);
 });
 
@@ -204,8 +204,11 @@ test("readOutput: claude JSON yields the answer and its cost; codex stderr yield
   assert.deepEqual([x.text, x.usage.tokens], ["answer", 12345]);
 });
 
-test("auto resolves to codex gpt-6-luna when codex is installed, else claude haiku", () => {
-  assert.deepEqual(resolveEngines(["auto"], new Set(["claude", "codex"])).engines, ["codex:gpt-6-luna@low"]);
+test("auto resolves to bare codex (no model id in code) when codex is installed, else claude haiku", () => {
+  const r = resolveEngines(["auto"], new Set(["claude", "codex"]));
+  assert.deepEqual(r.engines, ["codex"]);
+  assert.match(r.warnings[0], /Codex CLI's own default/);
+  assert.deepEqual(resolveEngines(["codex:some-model@low"], new Set(["codex"])).warnings, []);
   assert.deepEqual(resolveEngines(["auto"], new Set(["claude"])).engines, ["claude:haiku"]);
   assert.deepEqual(parseArgs(["run", "--plan", "p"]).value.engines, ["auto"]);
   assert.deepEqual(parseArgs(["run", "--plan", "p", "--engines", "CODEX:GPT-X"]).value.engines, ["codex:GPT-X"], "model id case is kept");

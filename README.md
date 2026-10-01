@@ -12,7 +12,7 @@ independent judge that filters false positives. Report-only — it never merges,
 > Installed as the `preflight` plugin (skills: `crew-review`, `crew-consult`, `biascheck`, `unbias`, `secure-research`, `multiplechoice`, `experiment`, `priorart`). Repo: `akasecurity/preflight-skills`.
 
 Eight skills ship: `crew-review` and `crew-consult` review code and design docs; `biascheck` scores a
-writing draft for authenticity with a neutral median scorer (several reads by `gpt-5.6-terra`, median
+writing draft for authenticity with a neutral median scorer (several reads by one model, median
 reported), report-only and never editing it. `unbias` is the odd one out — a prompt-only skill where
 the session model applies the tells catalog in place, not part of the crew engine. The two de-slop
 skills read different catalogs: `unbias` uses `shared/BIAS.md` (a forgiving self-editing catalog),
@@ -76,7 +76,7 @@ Then, in any repo:
    is written into the reviewed repo.
 
 `biascheck` does NOT use this two-reads-plus-judge pipeline. It is a **neutral median scorer**: N
-independent reads (default 3) by one model (`gpt-5.6-terra@medium`) each score the draft 0-100 against
+independent reads (default 3) by one model each score the draft 0-100 against
 `shared/TELLS.md`, and the report prints `AUTHENTICITY: <median>/100` with the score spread (higher =
 reads more human; a signal, not a verdict). A single read is noisy, so the median and spread are both
 shown. The draft itself is never edited.
@@ -116,12 +116,21 @@ crew.mjs biascheck <file>    [--reads <n>] [--read family[:tune]] [--item <label
 first available family (attributed on the report's `CREW:` line). `--timeout` defaults to `600`
 seconds per seat.
 
-For `openai`, `tune` is `effort` or `effort:model` (either half may be blank to take its role
-default): read seats default to `gpt-5.6-terra` at `medium` effort, the judge seat defaults to
-`gpt-5.6-sol` at `low` effort. Override effort only with `--read openai:high`, or pin a model too
-with `--read openai:high:gpt-6-preview`. The resolved `model@effort` prints on the report's `CREW:`
-line (e.g. `precision=openai:gpt-5.6-terra@medium`). Bump these constants in `bindingFor` (and this
-line) as OpenAI ships new models — there's no auto-discovery.
+**Tiers.** Models are chosen by capability tier: `fast` (mechanical implementation), `balanced`
+(integration and judgment), `extra` (architecture, design and the final review, on the top rung of
+this ladder). The older names `cheap` / `standard` / `most-capable` still work as aliases. For
+`claude`, a tier name resolves to the CLI's own alias (`haiku` / `sonnet` / `opus`), and an explicit
+model such as `claude:<model>` passes through unchanged. Claude reads default to `balanced` at minimum,
+and the claude recall read and judge default to `extra`. For Codex the dispatching agent states the model
+and effort it picked from `codex debug models`; a blank half leaves the Codex CLI's own default, so no tier
+floor is enforced by the scripts.
+
+For `openai`, no model id lives in the code. The agent that dispatches a codex seat reads the live
+list (`codex debug models`), picks a model by capability for the tier, and passes
+`--read openai:<model>@<effort>`. `tune` is `model@effort`, `effort:model` or a bare `effort`; either
+half may be blank, and a blank half leaves the Codex CLI's own default in place. Nothing validates the
+model: Codex's own error on an unknown slug is the check. The resolved `model@effort` prints on the
+report's `CREW:` line, with `default` for an unset half.
 
 With no `--read` flags, the script detects installed model CLIs on `PATH` for this run and prefers
 a cross-family crew. With exactly one family installed, it falls back to an intra-family mix (two
@@ -151,18 +160,20 @@ report in which every claim cites a source a researcher quoted.
 /secure-research "Which self-hosted price trackers are maintained in 2026?" --engines claude,codex,agy
 ```
 
-With no `--engines`, `auto` picks `codex:gpt-6-luna@low` when codex is installed, else `claude:haiku`.
-That default comes from a measured comparison on the same three angles, where a quote counts as found
-if the cited page contains it verbatim or shares a 6-word run with it:
+With no `--engines`, `auto` picks bare `codex` (the Codex CLI's own default model and effort) when codex is installed, else
+`claude:haiku`, and the run's `warnings` say so. For the fast tier, pass `codex:<model>@<effort>` with
+values from `codex debug models`. A measured comparison on the same three angles, where a quote counts
+as found if the cited page contains it verbatim or shares a 6-word run with it, preceded the tier
+work; its Codex row ran a fast-tier model at low effort:
 
 | Researcher | Quote found on the cited page | Median time | Cost |
 |---|---|---|---|
 | `claude:haiku` | 48% | 53 s | $0.62 |
 | `claude:sonnet` | 67% | 55 s | $0.75 |
-| `codex:gpt-6-luna@low` | 95% | 34 s | subscription |
+| `codex:gpt-6-luna@low` (measured before the tier work; the fast tier, with the model picked from the live list) | 95% | 34 s | subscription |
 
 Claude researchers read pages through WebFetch, which summarizes a page first, so their quotes are
-often paraphrases. Luna drew on fewer distinct sites, so mixing engines still adds breadth.
+often paraphrases. The Codex researcher drew on fewer distinct sites, so mixing engines still adds breadth.
 
 | Engine | What runs | Needs |
 |---|---|---|
@@ -174,7 +185,7 @@ often paraphrases. Luna drew on fewer distinct sites, so mixing engines still ad
 
 Every CLI runs in an empty temp directory, not your repo. That keeps the repo out of reach by
 default, but it is not a filesystem jail. Pick a model per engine with `<engine>:<model>[@<effort>]`,
-e.g. `--engines claude:haiku,claude:sonnet,codex:gpt-6-luna@low` compares three models on the same
+e.g. `--engines claude:haiku,claude:sonnet,codex:<model>@<effort>` compares three models on the same
 angles. At most 6 researchers run at once (`--concurrency`).
 
 `--mode rotate` (the default) gives each angle one engine, round-robin. `--mode all` runs every angle

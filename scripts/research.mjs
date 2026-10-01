@@ -12,9 +12,9 @@ import { runSeat, extractJson, reapAllSeats } from "./crew.mjs";
 
 export const USAGE = `usage: research.mjs engines
        research.mjs run --plan <plan.json> [--engines e1,e2|all] [--mode rotate|all] [--breadth <n>] [--sensitive] [--timeout <sec>] [--concurrency <n>]
-engines: auto (default: codex:gpt-6-luna@low if codex is installed, else claude:haiku)
+engines: auto (default: codex if installed, else claude:haiku; an agent passes codex:<model>@<effort> from codex debug models)
          claude · codex · agy · grok (model CLIs, each runs its own web search) · searxng (needs SEARXNG_URL)
-         a model CLI takes an optional tune, <engine>:<model>[@<effort>], e.g. claude:sonnet or codex:gpt-6-luna@low
+         a model CLI takes an optional tune, <engine>:<model>[@<effort>], e.g. claude:sonnet or codex:<model>@<effort>
 plan.json: {"question":"…","angles":[{"label":"…","query":"…","rationale":"…"}],"alreadyCovered":["host", …],"sensitive":false,"cursor":0}
 "all" = claude, searxng, codex, agy; grok runs only when named (its tool policy is unverified)`;
 
@@ -23,9 +23,12 @@ export const ENGINES = ["claude", "searxng", "codex", "grok", "agy"];
 // allow-list we could verify, so it runs only when named explicitly.
 export const ALL_ENGINES = ["claude", "searxng", "codex", "agy"];
 export const DEFAULT_CONCURRENCY = 6;
-// "auto" (the default) picks the researcher that measured best on quote fidelity, speed and cost:
-// codex with gpt-6-luna at low effort when codex is installed, else claude with haiku.
-export const AUTO_CODEX = "codex:gpt-6-luna@low";
+// "auto" (the default) picks codex when it is installed, else claude with haiku. No model id is named
+// in code: bare codex runs the Codex CLI's own default model and effort. The dispatching agent chooses a
+// fast-tier model and effort from `codex debug models` and passes them as codex:<model>@<effort>.
+// (This package has no user config file, so there is no autoCodex setting.)
+export const AUTO_CODEX = "codex";
+export const AUTO_CODEX_NOTE = "auto picked bare codex: the Codex CLI's own default model and effort apply. For the fast tier, pass --engines codex:<fast-tier model>@<effort> (values from `codex debug models`)";
 export const AUTO_FALLBACK = "claude:haiku";
 export const resolveAuto = (available) => (available.has("codex") ? AUTO_CODEX : AUTO_FALLBACK);
 const CLI_BIN = { claude: "claude", codex: "codex", grok: "grok", agy: "agy" };
@@ -52,7 +55,7 @@ Up to 8 findings. If you find nothing usable, return an empty findings array and
 // packetVia "stdin" pipes the prompt; "arg" passes it inline as the final argument (crew.mjs runSeat).
 // agy and grok need "arg": headless agy auto-denies the read_file permission a temp-file packet
 // would need, and prints nothing.
-// An engine spec is "<engine>[:<model>[@<effort>]]", e.g. claude:sonnet or codex:gpt-6-luna@low, so one
+// An engine spec is "<engine>[:<model>[@<effort>]]", e.g. claude:sonnet or codex:<model>@<effort>, so one
 // run can compare models on the same angles. A bare engine takes the CLI's default model (claude: haiku).
 export function parseEngineSpec(spec) {
   const [name, tune = ""] = String(spec).trim().split(/:(.*)/s);
@@ -304,6 +307,7 @@ export function assignJobs(angles, engines, { mode = "rotate", breadth = 1, curs
 export function resolveEngines(requested, available, { sensitive = false } = {}) {
   const warnings = [];
   const expanded = requested.map((e) => (e === "auto" ? resolveAuto(available) : e));
+  if (!sensitive && requested.includes("auto") && resolveAuto(available) === AUTO_CODEX) warnings.push(AUTO_CODEX_NOTE);
   const wanted = expanded.includes("all") ? [...new Set([...ALL_ENGINES, ...expanded.filter((e) => e !== "all")])] : expanded;
   const nameOf = (e) => parseEngineSpec(e).name;
   const unknown = wanted.filter((e) => !ENGINES.includes(nameOf(e)));

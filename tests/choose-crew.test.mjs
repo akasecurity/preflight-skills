@@ -23,7 +23,7 @@ test("two-plus families: claude recall + codex precision, claude judge", () => {
   const r = chooseCrew(all, { timeoutSec: 600 });
   assert.equal(r.ok, true);
   const { reads, judge, sameFamily, judgeFallback } = r.value;
-  assert.deepEqual(reads.map((s) => [s.role, s.family, s.tune]), [["recall", "claude", "opus"], ["precision", "openai", "gpt-5.6-terra@medium"]]);
+  assert.deepEqual(reads.map((s) => [s.role, s.family, s.tune]), [["recall", "claude", "opus"], ["precision", "openai", "default@default"]]);
   assert.deepEqual([judge.family, judge.tune, sameFamily, judgeFallback], ["claude", "opus", false, false]);
 });
 
@@ -40,7 +40,7 @@ test("claude only: intra-family opus+sonnet mix, sameFamily flagged", () => {
 
 test("openai only: two efforts, judge falls back attributed", () => {
   const r = chooseCrew(new Set(["openai"]), { timeoutSec: 600 });
-  assert.deepEqual(r.value.reads.map((s) => s.tune), ["gpt-5.6-terra@high", "gpt-5.6-terra@medium"]);
+  assert.deepEqual(r.value.reads.map((s) => s.tune), ["default@high", "default@medium"]);
   assert.deepEqual([r.value.judge.family, r.value.judgeFallback], ["openai", true]);
 });
 
@@ -64,8 +64,8 @@ test("unknown --read family refuses cleanly", () => {
 });
 
 test("--judge override is honored", () => {
-  const r = chooseCrew(all, { judgeSpec: "openai:high", timeoutSec: 600 });
-  assert.deepEqual([r.value.judge.family, r.value.judge.tune], ["openai", "gpt-5.6-sol@high"]);
+  const r = chooseCrew(all, { judgeSpec: "openai:some-model@high", timeoutSec: 600 });
+  assert.deepEqual([r.value.judge.family, r.value.judge.tune], ["openai", "some-model@high"]);
 });
 
 test("seats carry role briefs and contracts", () => {
@@ -91,7 +91,7 @@ test("default detection crews carry no warnings", () => {
 });
 
 test("--judge for an absent family errors naming binary and flag", () => {
-  const r = chooseCrew(new Set(["claude"]), { judgeSpec: "openai:high", timeoutSec: 600 });
+  const r = chooseCrew(new Set(["claude"]), { judgeSpec: "openai:some-model@high", timeoutSec: 600 });
   assert.equal(r.ok, false);
   assert.match(r.error, /--judge/);
   assert.match(r.error, /codex/);
