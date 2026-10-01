@@ -34,7 +34,7 @@ keywords = ["tag:"]
 [[rules]]
 id = "personal-email"
 description = "Email address at a personal mail provider"
-regex = '''(?i)\b[a-z0-9._%+-]+@(?:gmail|googlemail|icloud|me|mac|outlook|hotmail|live|msn|yahoo|aol|gmx|proton|protonmail|pm|fastmail|hey)\.(?:com|net|me|ch|de)\b'''
+regex = '''(?i)\b[a-z0-9._%+-]+@(?:gmail|googlemail|icloud|me|mac|outlook|hotmail|live|msn|yahoo|aol|gmx|proton|protonmail|pm|fastmail|hey)\.[a-z]{2,}(?:\.[a-z]{2,})?\b'''
 keywords = ["gmail", "googlemail", "icloud", "@me.", "@mac.", "outlook", "hotmail", "@live.", "@msn.", "yahoo", "@aol.", "@gmx.", "proton", "@pm.", "fastmail", "@hey."]
 
 [[rules]]
