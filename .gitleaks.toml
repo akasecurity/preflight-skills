@@ -1,0 +1,50 @@
+# .gitleaks.toml — leak rules for this public repo (gitleaks >= 8.25).
+#
+# Run over the full git history by .github/workflows/gitleaks.yml on every push and pull request.
+# Default secret rules plus four custom classes:
+#   tailnet-hostname  any *.ts.net hostname (example.ts.net is the documentation placeholder)
+#   tailscale-acl-tag Tailscale ACL tags other than the generic worker/edge/gpu/nas
+#   personal-email    addresses at personal mail providers (noreply GitHub addresses never match)
+#   local-model-name  the local model family name (one upstream CLI env var is allowed)
+#
+# No real fleet value appears here on purpose: the rules are generic so this file can ship publicly.
+# The model family is spelled q[w]en so the word itself never appears in public text.
+
+title = "preflight-skills leak rules"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "tailnet-hostname"
+description = "Tailscale MagicDNS hostname (*.ts.net)"
+regex = '''(?i)\b(?:[a-z0-9-]+\.)+ts\.net\b'''
+keywords = ["ts.net"]
+  [[rules.allowlists]]
+  regexes = ['''(?i)^(?:[a-z0-9-]+\.)*example\.ts\.net$''']
+
+[[rules]]
+id = "tailscale-acl-tag"
+description = "Tailscale ACL tag naming a real fleet role"
+regex = '''\btag:[a-z][a-z0-9-]*\b'''
+keywords = ["tag:"]
+  [[rules.allowlists]]
+  regexes = ['''^tag:(?:worker|edge|gpu|nas)$''', '''^tag:(?:yaml|v[0-9]+)$''']
+
+[[rules]]
+id = "personal-email"
+description = "Email address at a personal mail provider"
+regex = '''(?i)\b[a-z0-9._%+-]+@(?:gmail|googlemail|icloud|me|mac|outlook|hotmail|live|msn|yahoo|aol|gmx|proton|protonmail|pm|fastmail|hey)\.[a-z]{2,}(?:\.[a-z]{2,})?\b'''
+keywords = ["gmail", "googlemail", "icloud", "@me.", "@mac.", "outlook", "hotmail", "@live.", "@msn.", "yahoo", "@aol.", "@gmx.", "proton", "@pm.", "fastmail", "@hey."]
+
+[[rules]]
+id = "local-model-name"
+description = "Local model family name (public text says 'a local model')"
+regex = '''(?i)\bq[w]en[a-z0-9_.:-]*'''
+  [[rules.allowlists]]
+  # An upstream coding CLI's own config-dir env var, carried verbatim in vendored runtimes.
+  regexes = ['''^Q[W]EN_CONFIG_DIR$''']
+
+[[allowlists]]
+description = "the detector itself"
+paths = ['''(?:^|/)\.gitleaks\.toml$''']
