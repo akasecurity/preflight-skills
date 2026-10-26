@@ -24,9 +24,6 @@ independent judge that filters false positives. Report-only — it never merges,
 
 > Installed as the `preflight` plugin (skills: `crew-review`, `crew-consult`, `biascheck`, `unbias`, `secure-research`, `multiplechoice`, `experiment`, `priorart`). Repo: `akasecurity/preflight-skills`.
 
-<details>
-<summary><b>The eight skills</b>: what each one does and which are outside the crew</summary>
-
 Eight skills ship: `crew-review` and `crew-consult` review code and design docs; `biascheck` scores a
 writing draft for authenticity with a neutral median scorer (several reads by one model, median
 reported), report-only and never editing it. `unbias` is the odd one out — a prompt-only skill where
@@ -40,8 +37,6 @@ multiple-choice questions with the agent's recommendation first (see
 [multiplechoice](#multiplechoice) below). `experiment` and `priorart` are prompt-only checklists for two
 moments before you commit to something: measuring instead of arguing, and looking for what already
 exists before building it (see [experiment and priorart](#experiment-and-priorart) below).
-
-</details>
 
 From [akasecurity](https://akasecurity.io) · MIT · needs `node` · drives `claude` / `codex` / `agy`.
 
