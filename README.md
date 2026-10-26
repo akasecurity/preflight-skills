@@ -1,15 +1,31 @@
-# preflight-skills
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="media/cover-dark.svg">
+  <img src="media/cover-light.svg" alt="preflight by AKA Security, a second opinion before you merge. Illustration: a lane carrying a diff splits into two parallel inspection booths, claude and codex, and rejoins at a merge arrow into the main road." width="100%">
+</picture>
 
-<p align="center"><img src="media/banner.svg" alt="preflight — a second opinion before you merge. An independent multi-model review crew for coding agents. report-only · cross-family · independent judge. MIT · needs node · claude / codex / agy." width="100%"></p>
+<p align="center">
+  <a href="#quick-start"><b>Quick start</b></a> &nbsp;·&nbsp;
+  <a href="#how-it-works"><b>How it works</b></a> &nbsp;·&nbsp;
+  <a href="#cli"><b>CLI</b></a> &nbsp;·&nbsp;
+  <a href="#install-per-harness"><b>Install per harness</b></a> &nbsp;·&nbsp;
+  <a href="#faq"><b>FAQ</b></a>
+</p>
 
-![version](https://img.shields.io/badge/dynamic/json?url=https://raw.githubusercontent.com/akasecurity/preflight-skills/main/package.json&query=$.version&label=version&color=blue)
-![license](https://img.shields.io/badge/license-MIT-green)
+<h3 align="center">A second opinion before you merge.</h3>
 
-**A second opinion before you merge — multi-model code review for coding agents.** An independent multi-model review crew for your coding agent:
+<p align="center">
+  <img alt="version" src="https://img.shields.io/badge/dynamic/json?url=https://raw.githubusercontent.com/akasecurity/preflight-skills/main/package.json&query=$.version&label=version&color=blue">
+  <img alt="license" src="https://img.shields.io/badge/license-MIT-green">
+</p>
+
+**A second opinion before you merge: multi-model code review for coding agents.** An independent multi-model review crew for your coding agent:
 two blind parallel reads of a diff, design doc, or writing draft by different model families, then an
 independent judge that filters false positives. Report-only — it never merges, fixes, or acts.
 
 > Installed as the `preflight` plugin (skills: `crew-review`, `crew-consult`, `biascheck`, `unbias`, `secure-research`, `multiplechoice`, `experiment`, `priorart`). Repo: `akasecurity/preflight-skills`.
+
+<details>
+<summary><b>The eight skills</b>: what each one does and which are outside the crew</summary>
 
 Eight skills ship: `crew-review` and `crew-consult` review code and design docs; `biascheck` scores a
 writing draft for authenticity with a neutral median scorer (several reads by one model, median
@@ -24,6 +40,8 @@ multiple-choice questions with the agent's recommendation first (see
 [multiplechoice](#multiplechoice) below). `experiment` and `priorart` are prompt-only checklists for two
 moments before you commit to something: measuring instead of arguing, and looking for what already
 exists before building it (see [experiment and priorart](#experiment-and-priorart) below).
+
+</details>
 
 From [akasecurity](https://akasecurity.io) · MIT · needs `node` · drives `claude` / `codex` / `agy`.
 
@@ -152,6 +170,9 @@ Platform: macOS/Linux (POSIX). Windows is untested — CLI detection and spawn s
 
 ## secure-research
 
+<details>
+<summary><b>Cited web research</b> across several search engines</summary>
+
 Cited web research spread across several search engines. The session model splits the question into
 angles, `scripts/research.mjs` runs one web researcher per angle, and the session model writes a
 report in which every claim cites a source a researcher quoted.
@@ -202,7 +223,12 @@ researchers run through `research.mjs` too, so a sensitive run fails closed ther
 is unset (or pass `searxngUrl`). Other harnesses follow the steps in
 `skills/secure-research/SKILL.md`.
 
+</details>
+
 ## multiplechoice
+
+<details>
+<summary><b>Decisions as multiple choice</b>, with the agent's pick first</summary>
 
 ```
 /multiplechoice
@@ -216,7 +242,12 @@ the recommended option first. Rounds of up to four are asked one at a time. With
 it falls back to a numbered list you answer like `1a 2c`. Prompt-only: no script, no model calls.
 See `skills/multiplechoice/SKILL.md`.
 
+</details>
+
 ## experiment and priorart
+
+<details>
+<summary><b>Two checklists</b> for before you commit to something</summary>
 
 ```
 /experiment
@@ -237,6 +268,8 @@ project's decision log and notes, existing scripts, the components on either sid
 source), platform facilities, then maintained projects. The preferred order is to turn on or fix what
 exists, extend it through a supported point, adopt a maintained project, and only then build. It
 never edits vendored code.
+
+</details>
 
 ## Install per harness
 
