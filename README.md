@@ -8,7 +8,8 @@
   <a href="#how-it-works"><b>How it works</b></a> &nbsp;·&nbsp;
   <a href="#cli"><b>CLI</b></a> &nbsp;·&nbsp;
   <a href="#install-per-harness"><b>Install per harness</b></a> &nbsp;·&nbsp;
-  <a href="#faq"><b>FAQ</b></a>
+  <a href="#faq"><b>FAQ</b></a> &nbsp;·&nbsp;
+  <a href="https://akasecurity.github.io/preflight-skills-docs/"><b>Docs</b></a>
 </p>
 
 <h3 align="center">A second opinion before you merge.</h3>
@@ -268,9 +269,9 @@ never edits vendored code.
 
 ## Install per harness
 
-- **Claude Code** (fleet-exercised) — marketplace install, see Quick start above.
-- **Codex** (fleet-exercised) — via its plugin manifest dir (`.codex-plugin/`).
-- **Gemini / Antigravity** (fleet-exercised) — via `gemini-extension.json` / `GEMINI.md`.
+- **Claude Code** (maintainer-tested) — marketplace install, see Quick start above.
+- **Codex** (maintainer-tested) — via its plugin manifest dir (`.codex-plugin/`).
+- **Gemini / Antigravity** (maintainer-tested) — via `gemini-extension.json` / `GEMINI.md`.
 - **Others** (community-tested, mirrored from superpowers' manifest shapes) — OpenCode
   (`.opencode/`), Cursor (`.cursor-plugin/`), Kimi (`.kimi-plugin/`), Pi (`.pi/`).
 - **Any harness, manually** — clone the repo and point your harness at `skills/`; each skill is a
